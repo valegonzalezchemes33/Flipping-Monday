@@ -1,0 +1,8 @@
+node_modules
+.next
+.env.local
+.env
+bun.lock
+package-lock.json
+*.log
+.DS_Store

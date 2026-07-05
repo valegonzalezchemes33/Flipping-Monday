@@ -1,0 +1,64 @@
+# Archivos que NO se incluyen en el build de Docker
+# (evitan que el contexto sea enorme y el build sea lento)
+
+# Dependencias
+node_modules
+.pnp
+.pnp.js
+
+# Build artifacts
+.next
+out
+build
+dist
+
+# Datos locales
+db/*.db
+db/*.db-journal
+data/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev.log
+server.log
+
+# Environment (se monta como volume en docker-compose)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts de desarrollo
+scripts/
+tool-results/
+upload/
+download/
+mini-services/
+examples/
+skills/
+.zscripts/
+keep-server-alive.sh
+server-minimal.js

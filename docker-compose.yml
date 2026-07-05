@@ -1,0 +1,48 @@
+# ============================================================================
+# docker-compose.yml — monday-AI
+# ============================================================================
+# Uso:
+#   docker-compose up -d          → arranca en background
+#   docker-compose up             → arranca en foreground (ver logs)
+#   docker-compose down           → detiene
+#   docker-compose logs -f        → ver logs en tiempo real
+#   docker-compose restart        → reinicia
+#   docker-compose up --build     → rebuild + arranca
+# ============================================================================
+services:
+  monday-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monday-ai
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persistir la DB SQLite entre restarts
+      - monday-ai-data:/app/data
+      # Opcional: montar tu .env local para override de API keys
+      - ./.env:/app/.env:ro
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/custom.db
+      # === CONFIGURACIÓN DE API KEYS ===
+      # El SDK Z.ai (z-ai-web-dev-sdk) ya está configurado internamente.
+      # Si tienes tu propia Groq API key, ponla aquí para chat más rápido:
+      - GROQ_API_KEY=
+      # Si quieres conectar tu Monday.com real:
+      - MONDAY_API_KEY=
+    restart: unless-stopped
+    # Límites de memoria — ajusta según tu PC
+    mem_limit: 2g
+    mem_reservation: 512m
+    # Healthcheck básico
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  monday-ai-data:
+    driver: local
