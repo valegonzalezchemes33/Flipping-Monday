@@ -23,9 +23,9 @@ export function isZaiModel(modelId: string): boolean {
 
 
 const GROQ_MODELS = {
-  fast: "llama-3.1-8b-instant",
-  versatile: "llama-3.3-70b-versatile",
-  reasoning: "deepseek-r1-distill-llama-70b",
+  fast: "meta/llama-3.1-8b-instruct",
+  versatile: "meta/llama-3.3-70b-instruct",
+  reasoning: "deepseek-ai/deepseek-r1",
 } as const;
 
 // Tipos re-exportados desde groq-types (client-safe)
@@ -72,7 +72,7 @@ async function callGroq(
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -341,7 +341,7 @@ export async function chat(
   // promover automaticamente a Llama 3.3 70B para aprovechar la key.
   let modelId = typeof opts.model === "string" ? opts.model : "glm-4.6";
   if (hasGroqKey && (modelId === "glm-4.6" || modelId === "glm-4.5-air" || !modelId)) {
-    modelId = "llama-3.3-70b-versatile";
+    modelId = "meta/llama-3.3-70b-instruct";
   }
 
   if (hasGroqKey) {

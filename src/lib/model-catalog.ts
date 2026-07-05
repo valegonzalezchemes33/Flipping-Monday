@@ -47,8 +47,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
   },
   // Groq (Llama / DeepSeek)
   {
-    id: "llama-3.1-8b-instant",
-    name: "Llama 3.1 8B Instant",
+    id: "meta/llama-3.1-8b-instruct",
+    name: "Llama 3.1 8B Instruct",
     provider: "groq",
     description: "El mas rapido del catalogo. Ultra-bajo latency para respuestas en tiempo real.",
     speed: "fast",
@@ -59,8 +59,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     maxOutputTokens: 8192,
   },
   {
-    id: "llama-3.3-70b-versatile",
-    name: "Llama 3.3 70B Versatile",
+    id: "meta/llama-3.3-70b-instruct",
+    name: "Llama 3.3 70B Instruct",
     provider: "groq",
     description: "Balance ideal entre velocidad y calidad. Excelente para la mayoria de las tareas.",
     speed: "medium",
@@ -70,8 +70,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     maxOutputTokens: 32768,
   },
   {
-    id: "deepseek-r1-distill-llama-70b",
-    name: "DeepSeek R1 70B",
+    id: "deepseek-ai/deepseek-r1",
+    name: "DeepSeek R1",
     provider: "groq",
     description: "Razonamiento profundo paso a paso. Ideal para analisis complejos y resolucion de problemas.",
     speed: "slow",
