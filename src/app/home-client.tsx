@@ -18,10 +18,12 @@ import { ItemDetailDrawer } from "@/components/monday/item-detail-drawer";
 import { CommandPalette } from "@/components/monday/command-palette";
 import {
   HomeView,
+  MyWorkView,
   TeamView,
   DocsView,
   DashboardsView,
 } from "@/components/monday/sidebar-views";
+import { ActivityLogView } from "@/components/monday/activity-log-view";
 import { useToastActions } from "@/hooks/use-toast-actions";
 import { useAppStore } from "@/lib/store";
 import { AddBoardDialog, AddColumnDialog, AddViewDialog } from "@/components/monday/board-modals";
@@ -29,6 +31,8 @@ import { MondayConnectDialog } from "@/components/monday/monday-connect-dialog";
 import { SidekickChat, SidekickButton } from "@/components/monday/sidekick-chat";
 import { ExportImportDialog } from "@/components/monday/export-import-dialog";
 import { useAgentTriggers } from "@/hooks/use-agent-triggers";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { ShortcutsDialog } from "@/components/monday/shortcuts-dialog";
 
 // Lazy load de modales pesados — solo se cargan cuando se abren por primera vez
 const AgentBuilder = lazy(() =>
@@ -105,6 +109,8 @@ export default function Home() {
   useAgentTriggers();
   // Activar toasts de confirmación para todas las acciones
   useToastActions();
+  // Activar atajos de teclado globales
+  const { showShortcuts, setShowShortcuts } = useKeyboardShortcuts();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -120,9 +126,11 @@ export default function Home() {
   // Renderiza la vista según sidebarView seleccionado
   const renderMain = () => {
     if (sidebarView === "home") return <HomeView />;
+    if (sidebarView === "my_work") return <MyWorkView />;
     if (sidebarView === "team") return <TeamView />;
     if (sidebarView === "docs") return <DocsView />;
     if (sidebarView === "dashboards") return <DashboardsView />;
+    if (sidebarView === "activity") return <ActivityLogView />;
     if (!activeBoardId) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center bg-background text-muted-foreground gap-3">
@@ -214,6 +222,8 @@ export default function Home() {
           <SettingsDialog />
         </Suspense>
       </LazyMount>
+
+      <ShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
     </div>
   );
 }

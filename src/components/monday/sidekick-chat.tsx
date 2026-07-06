@@ -5,7 +5,7 @@
 // Chat en lenguaje natural con tool calling. El usuario escribe lo que quiere
 // hacer, el LLM (Groq con fallback a Z.ai) interpreta y ejecuta tools contra
 // el store.
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { useAppStore } from "@/lib/store";
 import type { SidekickMessage } from "@/lib/store";
 import { executeTool, type ToolExecutionContext } from "@/lib/sidekick-tools";
@@ -294,13 +294,13 @@ export function SidekickChat() {
       // llamar, etc.). MÃ¡ximo 8 rondas de tool calling.
       _depth: number = 0
     ) => {
-      // Safety: si el LLM lleva 8 rondas de tool calls, parar
+          // Safety: si el LLM lleva 8 rondas de tool calls, parar
       if (_depth >= 8) {
         const assistantMsgId = nextMsgId();
         addMessage({
           id: assistantMsgId,
           role: "assistant",
-          content: "âš ï¸ Detuve la ejecuciÃ³n despuÃ©s de 8 rondas de tool calls seguidas. Esto suele indicar que el modelo entrÃ³ en un loop. Intenta reformular tu pedido.",
+          content: "⚠️ Detuve la ejecución después de 8 rondas de tool calls seguidas. Esto suele indicar que el modelo entró en un loop. Intenta reformular tu pedido.",
           streaming: false,
           createdAt: new Date().toISOString(),
         });
@@ -430,12 +430,12 @@ export function SidekickChat() {
                 let friendlyMsg = p.message;
                 if (typeof p.message === "string") {
                   if (p.message.includes("429") || p.message.toLowerCase().includes("rate")) {
-                    friendlyMsg = "El servicio de IA estÃ¡ temporalmente saturado. Espera unos segundos y vuelve a intentarlo â€” tu mensaje y archivos siguen disponibles.";
+                    friendlyMsg = "El servicio de IA está temporalmente saturado. Espera unos segundos y vuelve a intentarlo — tu mensaje y archivos siguen disponibles.";
                   } else if (p.message.includes("403")) {
-                    friendlyMsg = "Acceso bloqueado a la API de IA. Si configuraste tu API key de Groq en Settings, verifica que sea vÃ¡lida.";
+                    friendlyMsg = "Acceso bloqueado a la API de IA. Si configuraste tu API key de Groq en Settings, verifica que sea válida.";
                   }
                 }
-                accContent += `\n\nâš ï¸ ${friendlyMsg}`;
+                accContent += `\n\n⚠️ ${friendlyMsg}`;
                 updateMessage(assistantMsgId, { content: accContent });
               }
             } catch {
@@ -504,7 +504,7 @@ export function SidekickChat() {
       } catch (e: any) {
         updateMessage(assistantMsgId, {
           streaming: false,
-          content: `âš ï¸ Error de conexiÃ³n: ${e?.message ?? "desconocido"}`,
+          content: `⚠️ Error de conexión: ${e?.message ?? "desconocido"}`,
         });
       } finally {
         setThinking(false);
@@ -533,7 +533,7 @@ export function SidekickChat() {
     // Si hay archivos adjuntos, incluir info en el mensaje
     let fullText = text;
     if (files.length > 0) {
-      const fileNames = files.map((f) => `ðŸ“Ž ${f.name} (${Math.round(f.size / 1024)}KB, ${f.mime})`).join("\n");
+      const fileNames = files.map((f) => `📎 ${f.name} (${Math.round(f.size / 1024)}KB, ${f.mime})`).join("\n");
       fullText = `${text || "He adjuntado los siguientes archivos:"}\n\nArchivos adjuntos:\n${fileNames}\n\nPor favor lee los archivos adjuntos usando la herramienta read_attached_files.`;
     }
 
@@ -626,7 +626,7 @@ export function SidekickChat() {
                       size="sm"
                       className="h-7 w-7 p-0 text-muted-foreground"
                       onClick={() => {
-                        if (window.confirm("Â¿Limpiar conversaciÃ³n?")) {
+                        if (window.confirm("¿Limpiar conversación?")) {
                           clearMessages();
                         }
                       }}
@@ -674,7 +674,7 @@ export function SidekickChat() {
                 className="text-[10px] text-[#0072E5] hover:underline ml-auto"
                 onClick={() => { setShowSettings(false); openGlobalSettings(true); }}
               >
-                Abrir Settings â†’
+                Abrir Settings →
               </button>
             </div>
           </div>
@@ -686,7 +686,7 @@ export function SidekickChat() {
             <Zap className="h-2.5 w-2.5 text-[#FFC700]" />
             <span className="truncate">
               Contexto: {activeBoard?.name}
-              {selectedItem && ` â†’ ${selectedItem.name}`}
+              {selectedItem && ` → ${selectedItem.name}`}
             </span>
           </div>
         )}
@@ -702,7 +702,7 @@ export function SidekickChat() {
                 <Sparkles className="h-6 w-6" />
               </div>
               <div className="text-sm font-semibold mb-1">
-                Â¡Hola{me ? `, ${me.name.split(" ")[0]}` : ""}! ðŸ‘‹
+                ¡Hola{me ? `, ${me.name.split(" ")[0]}` : ""}! 👋
               </div>
               <div className="text-xs text-muted-foreground max-w-[280px] mx-auto mb-4">
                 Soy Sidekick. PÃ­deme en lenguaje natural lo que quieras hacer en
@@ -896,7 +896,7 @@ export function SidekickChat() {
 // ============================================================================
 // MessageBubble â€” renderiza un mensaje con tool calls
 // ============================================================================
-function MessageBubble({ msg }: { msg: SidekickMessage }) {
+const MessageBubble = memo(function MessageBubble({ msg }: { msg: SidekickMessage }) {
   const isUser = msg.role === "user";
   const isTool = msg.role === "tool";
 
@@ -963,7 +963,7 @@ function MessageBubble({ msg }: { msg: SidekickMessage }) {
       </div>
     </motion.div>
   );
-}
+});
 
 // ============================================================================
 // ToolCallCard â€” muestra un tool call ejecutÃ¡ndose con su resultado

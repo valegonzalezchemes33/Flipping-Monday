@@ -3,6 +3,7 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   typescript: {
+    // TODO: remover ignoreBuildErrors cuando se corrijan ~180 errores de tipo (any, @ts-ignore, etc.)
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,

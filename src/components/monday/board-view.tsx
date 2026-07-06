@@ -68,15 +68,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { MainTableView } from "./main-table-view";
+// Skeleton loaders para vistas lazy
+import { SkeletonTable } from "@/components/ui/skeleton-table";
+import { SkeletonKanban } from "@/components/ui/skeleton-kanban";
 // Code-splitting: las vistas pesadas (Kanban, Gantt, Calendar, Chart, Timeline,
 // Workload) se cargan dinámicamente solo cuando se usan. Esto reduce el bundle
 // inicial y mejora el time-to-interactive de la página principal.
-const KanbanView = dynamic(() => import("./kanban-view").then((m) => m.KanbanView), { ssr: false });
-const CalendarView = dynamic(() => import("./calendar-view").then((m) => m.CalendarView), { ssr: false });
-const GanttView = dynamic(() => import("./gantt-view").then((m) => m.GanttView), { ssr: false });
-const WorkloadView = dynamic(() => import("./workload-view").then((m) => m.WorkloadView), { ssr: false });
-const ChartView = dynamic(() => import("./chart-view").then((m) => m.ChartView), { ssr: false });
-const TimelineView = dynamic(() => import("./timeline-view").then((m) => m.TimelineView), { ssr: false });
+const KanbanView = dynamic(() => import("./kanban-view").then((m) => m.KanbanView), { ssr: false, loading: () => <SkeletonKanban /> });
+const CalendarView = dynamic(() => import("./calendar-view").then((m) => m.CalendarView), { ssr: false, loading: () => <SkeletonTable /> });
+const GanttView = dynamic(() => import("./gantt-view").then((m) => m.GanttView), { ssr: false, loading: () => <SkeletonTable /> });
+const WorkloadView = dynamic(() => import("./workload-view").then((m) => m.WorkloadView), { ssr: false, loading: () => <SkeletonTable /> });
+const ChartView = dynamic(() => import("./chart-view").then((m) => m.ChartView), { ssr: false, loading: () => <SkeletonTable /> });
+const TimelineView = dynamic(() => import("./timeline-view").then((m) => m.TimelineView), { ssr: false, loading: () => <SkeletonTable /> });
+const FormView = dynamic(() => import("./form-view").then((m) => m.FormView), { ssr: false, loading: () => <SkeletonTable /> });
+const FilesView = dynamic(() => import("./files-view").then((m) => m.FilesView), { ssr: false, loading: () => <SkeletonTable /> });
 const ExportImportDialog = dynamic(() => import("./export-import-dialog").then((m) => m.ExportImportDialog), { ssr: false });
 import type { ViewType, ColumnType } from "@/lib/types";
 
@@ -169,6 +174,10 @@ export function BoardView() {
         return <ChartView />;
       case "timeline":
         return <TimelineView />;
+      case "form":
+        return <FormView />;
+      case "files":
+        return <FilesView />;
       case "main_table":
       default:
         return <MainTableView />;
@@ -270,7 +279,7 @@ export function BoardView() {
                   <span className="hidden sm:inline">Exportar</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Exportar tablero a JSON/Excel</TooltipContent>
+              <TooltipContent>Exportar tablero a JSON/Excel <kbd className="ml-1 text-[9px] bg-white/20 px-1 py-0.5 rounded">⌘E</kbd></TooltipContent>
             </Tooltip>
             {/* Acción primaria: Nueva tarea */}
             <Tooltip>
@@ -286,7 +295,7 @@ export function BoardView() {
               Nueva tarea
             </Button>
               </TooltipTrigger>
-              <TooltipContent>Crear una nueva tarea en este tablero</TooltipContent>
+              <TooltipContent>Crear una nueva tarea en este tablero <kbd className="ml-1 text-[9px] bg-white/20 px-1 py-0.5 rounded">⌘N</kbd></TooltipContent>
             </Tooltip>
             </TooltipProvider>
           </div>
@@ -480,11 +489,10 @@ function FilterPopover({
   filters: { columnId: string; op: string; value: any }[];
   setFilters: (f: any[]) => void;
 }) {
+  const board = useAppStore((s) => s.boards.find((b) => b.id === boardId));
   const [local, setLocal] = useState(filters);
 
   // FIX: re-sync local state cuando cambian los filters del store.
-  // Antes, si abrías el popover, cambiabas algo, cerrabas sin aplicar, y
-  // volvías a abrir, veías el estado stale (los cambios no aplicados).
   useEffect(() => {
     setLocal(filters);
   }, [filters]);
@@ -494,6 +502,24 @@ function FilterPopover({
     next[i] = { ...next[i], ...patch };
     setLocal(next);
   };
+
+  // Preview count: calcular cuántos items califican con los filtros actuales
+  const previewCount = useMemo(() => {
+    if (!board || local.length === 0) return board?.items.length ?? 0;
+    return board.items.filter((it) =>
+      local.every((f) => {
+        const cv = it.columnValues.find((v) => v.columnId === f.columnId);
+        const v = cv?.value;
+        if (f.op === "empty") return !v || Object.keys(v).length === 0;
+        if (!v) return false;
+        const text = v.text ?? v.labelId ?? "";
+        if (f.op === "eq") return String(text) === String(f.value);
+        if (f.op === "neq") return String(text) !== String(f.value);
+        if (f.op === "contains") return String(text).toLowerCase().includes(String(f.value).toLowerCase());
+        return true;
+      })
+    ).length;
+  }, [board, local]);
 
   return (
     <Popover>
@@ -574,7 +600,14 @@ function FilterPopover({
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2 mt-3">
+
+        {/* Preview count en vivo */}
+        <div className="mt-2 text-[11px] text-muted-foreground bg-secondary/30 rounded px-2 py-1.5 flex items-center justify-between">
+          <span>Items que califican:</span>
+          <span className="font-semibold text-foreground">{previewCount}</span>
+        </div>
+
+        <div className="flex items-center gap-2 mt-2">
           <Button
             variant="outline"
             size="sm"

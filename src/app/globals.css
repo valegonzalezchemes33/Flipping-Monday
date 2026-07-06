@@ -222,13 +222,7 @@ button, a, [role="button"], input, select, textarea {
   overflow: hidden;
 }
 
-/* Drag-over highlight mejorado */
-.drag-over {
-  background: rgba(0, 114, 229, 0.06) !important;
-  outline: 2px dashed rgba(0, 114, 229, 0.5);
-  outline-offset: -2px;
-  border-radius: 6px;
-}
+
 
 /* Skeleton shimmer para loading */
 @keyframes shimmer {
@@ -253,9 +247,18 @@ button, a, [role="button"], input, select, textarea {
   animation: pulse-ring 1.5s infinite;
 }
 
+/* Dragging state — item being dragged */
+.dragging {
+  opacity: 0.5;
+  transform: rotate(1deg) scale(0.98);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
 /* Drag-over highlight */
 .drag-over {
   background: var(--accent) !important;
   outline: 2px dashed var(--primary);
   outline-offset: -2px;
 }
+
+

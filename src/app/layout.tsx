@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { HydrationGate } from "@/components/monday/hydration-gate";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,9 +35,11 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
       >
-        <HydrationGate>{children}</HydrationGate>
-        <Toaster />
-        <Sonner />
+        <ErrorBoundary>
+          <HydrationGate>{children}</HydrationGate>
+          <Toaster />
+          <Sonner />
+        </ErrorBoundary>
       </body>
     </html>
   );

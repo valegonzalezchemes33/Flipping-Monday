@@ -59,6 +59,7 @@ export interface User {
   avatarUrl?: string;
   role: "owner" | "admin" | "member" | "viewer" | "guest";
   color: string; // para avatar fallback
+  online?: boolean; // presencia en vivo
 }
 
 export interface Team {

@@ -3,7 +3,7 @@
 // ColumnRenderer — registry pattern para renderizar cada tipo de columna Monday
 // Visualmente pulido: dots de status, avatares consistentes, progress bars, AI buttons
 // ============================================================================
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Check,
   ChevronDown,
@@ -16,6 +16,8 @@ import {
   Phone,
   Link as LinkIcon,
   Star,
+  ArrowRight,
+  ArrowLeft,
 } from "lucide-react";
 import type { ColumnDef, ColumnValue, Item, User } from "@/lib/types";
 import {
@@ -73,6 +75,8 @@ export function ColumnRenderer({ column, value, item, users, compact }: Props) {
       return <FileCell column={column} value={value} item={item} compact={compact} />;
     case "time_tracking":
       return <TimeTrackingCell column={column} value={value} item={item} compact={compact} />;
+    case "dependency":
+      return <DependencyCell column={column} value={value} item={item} compact={compact} />;
     case "ai_agent":
       return <AIAgentCell column={column} value={value} item={item} compact={compact} />;
     case "formula":
@@ -349,21 +353,25 @@ function PeopleCell({ column, value, item, users, compact }: Props) {
                 const u = users?.find((x) => x.id === id);
                 if (!u) return null;
                 return (
-                  <Avatar
-                    key={id}
-                    className="h-6 w-6 border-2 border-card text-[9px] font-semibold"
-                  >
-                    <AvatarFallback
-                      style={{ background: u.color }}
-                      className="text-white"
+                  <div key={id} className="relative">
+                    <Avatar
+                      className="h-6 w-6 border-2 border-card text-[9px] font-semibold"
                     >
-                      {u.name
-                        .split(" ")
-                        .map((p) => p[0])
-                        .slice(0, 2)
-                        .join("")}
-                    </AvatarFallback>
-                  </Avatar>
+                      <AvatarFallback
+                        style={{ background: u.color }}
+                        className="text-white"
+                      >
+                        {u.name
+                          .split(" ")
+                          .map((p) => p[0])
+                          .slice(0, 2)
+                          .join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    {u.online && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#00C875] rounded-full border-2 border-card" />
+                    )}
+                  </div>
                 );
               })}
               {selectedIds.length > 3 && (
@@ -392,18 +400,23 @@ function PeopleCell({ column, value, item, users, compact }: Props) {
               }}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-secondary transition"
             >
-              <Avatar className="h-5 w-5">
-                <AvatarFallback
-                  style={{ background: u.color }}
-                  className="text-white text-[9px] font-semibold"
-                >
-                  {u.name
-                    .split(" ")
-                    .map((p) => p[0])
-                    .slice(0, 2)
-                    .join("")}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="h-5 w-5">
+                  <AvatarFallback
+                    style={{ background: u.color }}
+                    className="text-white text-[9px] font-semibold"
+                  >
+                    {u.name
+                      .split(" ")
+                      .map((p) => p[0])
+                      .slice(0, 2)
+                      .join("")}
+                  </AvatarFallback>
+                </Avatar>
+                {u.online && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-[#00C875] rounded-full border-2 border-popover" />
+                )}
+              </div>
               <span className="flex-1 text-left truncate">{u.name}</span>
               {checked && <Check className="h-3 w-3 text-[#0072E5]" />}
             </button>
@@ -538,6 +551,235 @@ function ProgressCell({ column, value, item, compact }: Props) {
       </div>
     </div>
   );
+}
+
+// ============================================================================
+// DependencyCell — muestra dependencias entre items con flechas visuales
+// ============================================================================
+function DependencyCell({ column, value, item, compact }: Props) {
+  const updateColumnValue = useAppStore((s) => s.updateColumnValue);
+  const boards = useAppStore((s) => s.boards);
+  const activeBoardId = useAppStore((s) => s.activeBoardId);
+  const selectItem = useAppStore((s) => s.selectItem);
+
+  const deps: { itemId: string; type: "depends_on" | "blocked_by" }[] =
+    value?.value?.dependencies ?? [];
+
+  const allItems = useMemo(
+    () => boards.flatMap((b) => b.items),
+    [boards]
+  );
+
+  const findItemName = (id: string) => {
+    const found = allItems.find((i) => i.id === id);
+    return found?.name ?? "(item no encontrado)";
+  };
+
+  const navigateToItem = (itemId: string) => {
+    // Find the board that contains this item and set it active
+    const containingBoard = boards.find((b) => b.items.some((i) => i.id === itemId));
+    if (containingBoard) {
+      useAppStore.getState().setActiveBoard(containingBoard.id);
+    }
+    selectItem(itemId);
+  };
+
+  if (deps.length === 0) {
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-muted-foreground/60 italic hover:bg-secondary/40 transition min-h-[28px]">
+            <ArrowRight className="h-3 w-3" />
+            {compact ? "—" : "Sin dependencias"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-3" align="start">
+          <DependencyEditor
+            item={item}
+            column={column}
+            deps={deps}
+            allItems={allItems}
+            updateColumnValue={updateColumnValue}
+            onNavigate={navigateToItem}
+          />
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="w-full flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/40 transition min-h-[28px] group">
+          <div className="flex flex-wrap gap-1 items-center">
+            {deps.slice(0, 3).map((dep, i) => (
+              <span
+                key={dep.itemId}
+                className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-[#A25BFF]/10 text-[#A25BFF] font-medium"
+                title={findItemName(dep.itemId)}
+              >
+                {dep.type === "blocked_by" ? (
+                  <ArrowLeft className="h-2.5 w-2.5" />
+                ) : (
+                  <ArrowRight className="h-2.5 w-2.5" />
+                )}
+                <span className="truncate max-w-[60px]">
+                  {findItemName(dep.itemId).split(" ")[0]}
+                </span>
+              </span>
+            ))}
+            {deps.length > 3 && (
+              <span className="text-[10px] text-muted-foreground">+{deps.length - 3}</span>
+            )}
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-3" align="start">
+        <DependencyEditor
+          item={item}
+          column={column}
+          deps={deps}
+          allItems={allItems}
+          updateColumnValue={updateColumnValue}
+          onNavigate={navigateToItem}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// DependencyEditor — popover para añadir/remover dependencias
+// ----------------------------------------------------------------------------
+function DependencyEditor({
+  item,
+  column,
+  deps,
+  allItems,
+  updateColumnValue,
+  onNavigate,
+}: {
+  item: Item;
+  column: ColumnDef;
+  deps: { itemId: string; type: "depends_on" | "blocked_by" }[];
+  allItems: Item[];
+  updateColumnValue: (itemId: string, columnId: string, value: any) => void;
+  onNavigate: (itemId: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  // Excluir el item actual y items ya dependientes
+  const available = useMemo(() => {
+    const depIds = new Set(deps.map((d) => d.itemId));
+    return allItems
+      .filter((i) => i.id !== item.id && !depIds.has(i.id))
+      .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+      .slice(0, 8);
+  }, [allItems, item.id, deps, search]);
+
+  const addDependency = (targetId: string, type: "depends_on" | "blocked_by") => {
+    updateColumnValue(item.id, column.id, {
+      dependencies: [...deps, { itemId: targetId, type }],
+    });
+  };
+
+  const removeDependency = (targetId: string) => {
+    updateColumnValue(item.id, column.id, {
+      dependencies: deps.filter((d) => d.itemId !== targetId),
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+        Dependencias
+      </div>
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Buscar item…"
+        className="h-7 text-xs"
+      />
+
+      {/* Dependencias actuales */}
+      {deps.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Actuales
+          </div>
+          {deps.map((dep) => (
+            <div
+              key={dep.itemId}
+              className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-secondary/40 text-xs group"
+            >
+              <span className="text-[#A25BFF] shrink-0">
+                {dep.type === "blocked_by" ? "←" : "→"}
+              </span>
+              <span className="flex-1 truncate">{findItemNameFromList(allItems, dep.itemId)}</span>
+              <span className="text-[9px] text-muted-foreground capitalize">
+                {dep.type === "blocked_by" ? "bloqueado por" : "depende de"}
+              </span>
+              <button
+                onClick={() => removeDependency(dep.itemId)}
+                className="w-5 h-5 flex items-center justify-center rounded text-[#E2445C] opacity-0 group-hover:opacity-100 hover:bg-[#E2445C]/10"
+              >
+                <Plus className="h-2.5 w-2.5 rotate-45" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Items disponibles para agregar */}
+      {available.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Agregar dependencia
+          </div>
+          {available.map((i) => (
+            <div key={i.id} className="flex items-center gap-1 py-1">
+              <span className="flex-1 text-xs truncate">{i.name}</span>
+              <button
+                onClick={() => addDependency(i.id, "depends_on")}
+                className="text-[9px] px-1.5 py-0.5 rounded bg-[#A25BFF]/10 text-[#A25BFF] hover:bg-[#A25BFF]/20 transition"
+                title="Este item depende de éste"
+              >
+                ← Depende
+              </button>
+              <button
+                onClick={() => addDependency(i.id, "blocked_by")}
+                className="text-[9px] px-1.5 py-0.5 rounded bg-[#5559DF]/10 text-[#5559DF] hover:bg-[#5559DF]/20 transition"
+                title="Este item bloquea a éste"
+              >
+                Bloquea →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {deps.length > 0 && (
+        <div className="pt-2 border-t border-border">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-7 text-xs"
+            onClick={() => {
+              if (deps.length > 0) {
+                onNavigate(deps[0].itemId);
+              }
+            }}
+          >
+            Navegar a item dependiente
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function findItemNameFromList(items: Item[], id: string): string {
+  return items.find((i) => i.id === id)?.name ?? "(no encontrado)";
 }
 
 // ----------------------------------------------------------------------------

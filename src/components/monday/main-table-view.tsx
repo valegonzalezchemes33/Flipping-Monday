@@ -52,6 +52,7 @@ export function MainTableView() {
   const deleteItem = useAppStore((s) => s.deleteItem);
   const duplicateItem = useAppStore((s) => s.duplicateItem);
   const archiveItem = useAppStore((s) => s.archiveItem);
+  const reorderItem = useAppStore((s) => s.reorderItem);
   const addColumn = useAppStore((s) => s.addColumn);
   const setShowAddColumn = useAppStore((s) => s.setShowAddColumn);
   const sorts = useAppStore((s) => s.sorts);
@@ -64,6 +65,7 @@ export function MainTableView() {
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [renamingCol, setRenamingCol] = useState<string | null>(null);
@@ -153,10 +155,10 @@ export function MainTableView() {
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      {/* ── Batch Actions Toolbar flotante ── */}
+      {/* ── Batch Actions Toolbar sticky ── */}
       {selectedRowIds.length > 0 && (
-        <div className="relative z-20">
-          <div className="flex items-center gap-1 px-3 py-2 bg-[#0072E5] text-white text-xs shadow-lg">
+        <div className="sticky top-0 z-30 bg-[#0072E5] shadow-lg">
+          <div className="flex items-center gap-1 px-3 py-2 text-white text-xs">
             {/* Count + deselect */}
             <div className="flex items-center gap-2 mr-2">
               <button
@@ -351,9 +353,20 @@ export function MainTableView() {
             onMoveItem={(itemId, toGroupId) => moveItem(itemId, toGroupId)}
             draggingItemId={draggingItemId}
             dragOverGroupId={dragOverGroupId}
+            dragOverItemId={dragOverItemId}
             onDragStart={(id) => setDraggingItemId(id)}
             onDragOver={(gid) => setDragOverGroupId(gid)}
+            onDragOverItem={(iid) => setDragOverItemId(iid)}
             onDrop={handleDrop}
+            onDropOnItem={(targetItemId) => {
+              if (draggingItemId && draggingItemId !== targetItemId) {
+                const target = board.items.find((i) => i.id === targetItemId);
+                if (target) reorderItem(draggingItemId, target.position);
+              }
+              setDraggingItemId(null);
+              setDragOverGroupId(null);
+              setDragOverItemId(null);
+            }}
             addingToGroup={addingToGroup}
             setAddingToGroup={setAddingToGroup}
             newItemName={newItemName}
@@ -530,9 +543,12 @@ function GroupBlock({
   onMoveItem: (itemId: string, toGroupId: string) => void;
   draggingItemId: string | null;
   dragOverGroupId: string | null;
+  dragOverItemId: string | null;
   onDragStart: (id: string) => void;
   onDragOver: (gid: string) => void;
+  onDragOverItem: (iid: string) => void;
   onDrop: (gid: string) => void;
+  onDropOnItem: (targetItemId: string) => void;
   addingToGroup: string | null;
   setAddingToGroup: (id: string | null) => void;
   newItemName: string;
@@ -656,6 +672,15 @@ function GroupBlock({
               onSelect={() => onSelectItem(item.id)}
               onToggleRow={() => onToggleRow(item.id)}
               onDragStart={() => onDragStart(item.id)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                onDragOverItem(item.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                onDropOnItem(item.id);
+              }}
+              isDragOver={dragOverItemId === item.id}
               onUpdateName={(name) => onUpdateItemName(item.id, name)}
               onDuplicate={() => onDuplicateItem(item.id)}
               onArchive={() => onArchiveItem(item.id)}
@@ -716,6 +741,9 @@ function ItemRow({
   onSelect,
   onToggleRow,
   onDragStart,
+  onDragOver,
+  onDrop,
+  isDragOver,
   onUpdateName,
   onDuplicate,
   onArchive,
@@ -731,6 +759,9 @@ function ItemRow({
   onSelect: () => void;
   onToggleRow: () => void;
   onDragStart: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  isDragOver?: boolean;
   onUpdateName: (name: string) => void;
   onDuplicate: () => void;
   onArchive: () => void;
@@ -745,11 +776,14 @@ function ItemRow({
     <div
       draggable
       onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       onClick={onSelect}
       className={cn(
         "flex items-stretch border-b border-border bg-card cursor-pointer transition group hover:bg-secondary/20",
         selected && "bg-[#0072E5]/5 ring-1 ring-inset ring-[#0072E5]/20",
-        rowSelected && "bg-[#0072E5]/8"
+        rowSelected && "bg-[#0072E5]/8",
+        isDragOver && "border-t-2 border-t-[#0072E5] drag-over"
       )}
     >
       <div className="w-8 shrink-0 border-r border-border flex items-center justify-center">

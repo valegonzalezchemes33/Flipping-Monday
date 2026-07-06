@@ -54,6 +54,10 @@ export function useAgentTriggers() {
   // (auto-fill actualiza item.updatedAt → fingerprint cambia → re-dispara)
   const autoFilledRef = useRef<Set<string>>(new Set());
 
+  // Memoizar funciones helpers para que sean estables entre renders
+  const triggerAgentsForItem = useRef<(item: Item, board: Board, triggerType: string) => void>();
+  const runAutoFillAgent = useRef<(agent: Agent, item: Item, columnId: string) => Promise<void>>();
+
   useEffect(() => {
     // Si no hay agentes activos, no hacer nada
     if (itemsFingerprint === "noop") return;
@@ -78,8 +82,8 @@ export function useAgentTriggers() {
             // Solo disparar si el item fue creado recientemente (últimos 30 segundos)
             const createdAt = new Date(item.createdAt).getTime();
             const isRecent = Date.now() - createdAt < 30000;
-            if (isRecent) {
-              triggerAgentsForItem(item, board, "item_created");
+            if (isRecent && triggerAgentsForItem.current) {
+              triggerAgentsForItem.current(item, board, "item_created");
             }
           }
           continue;
@@ -89,7 +93,9 @@ export function useAgentTriggers() {
         if (prevVersion !== version) {
           itemVersionsRef.current.set(item.id, version);
           // Disparar agentes con trigger column_change
-          triggerAgentsForItem(item, board, "column_change");
+          if (triggerAgentsForItem.current) {
+            triggerAgentsForItem.current(item, board, "column_change");
+          }
         }
       }
     }
@@ -103,21 +109,18 @@ export function useAgentTriggers() {
         for (const aiCol of aiColumns) {
           const cv = item.columnValues.find((v) => v.columnId === aiCol.id);
           // Si la columna AI no tiene output y el item tiene datos, ejecutar el agente.
-          // IMPORTANTE: trackear qué items ya intentamos auto-fill para evitar
-          // loop infinito — el auto-fill actualiza item.updatedAt → fingerprint
-          // cambia → effect re-dispara → auto-fill otra vez → loop.
           const fillKey = `${item.id}-${aiCol.id}`;
           if (!cv?.value?.lastOutput && !runningAgentsRef.current.has(fillKey) && !autoFilledRef.current.has(fillKey)) {
             // Verificar que el item tenga al menos un nombre
             if (item.name && item.name.trim()) {
               const agent = agents.find((a) => a.id === aiCol.agentIds?.[0]);
-              if (agent && agent.isActive) {
+              if (agent && agent.isActive && runAutoFillAgent.current) {
                 // Solo auto-ejecutar si el item fue creado/modificado recientemente
                 const updatedAt = new Date(item.updatedAt).getTime();
                 const isRecent = Date.now() - updatedAt < 30000;
                 if (isRecent) {
                   autoFilledRef.current.add(fillKey);
-                  runAutoFillAgent(agent, item, aiCol.id);
+                  runAutoFillAgent.current(agent, item, aiCol.id);
                 }
               }
             }
@@ -125,11 +128,10 @@ export function useAgentTriggers() {
         }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemsFingerprint, agents]);
+  }, [itemsFingerprint, agents, runAgent]);
 
   // ---- Helper: disparar agentes para un item según trigger type ----
-  const triggerAgentsForItem = (item: Item, board: Board, triggerType: string) => {
+  triggerAgentsForItem.current = (item: Item, board: Board, triggerType: string) => {
     const matchingAgents = agents.filter(
       (a) =>
         a.isActive &&
@@ -156,7 +158,7 @@ export function useAgentTriggers() {
   };
 
   // ---- Helper: auto-fill de columna AI ----
-  const runAutoFillAgent = async (agent: Agent, item: Item, columnId: string) => {
+  runAutoFillAgent.current = async (agent: Agent, item: Item, columnId: string) => {
     const key = `${item.id}-${columnId}`;
     if (runningAgentsRef.current.has(key)) return;
     runningAgentsRef.current.add(key);

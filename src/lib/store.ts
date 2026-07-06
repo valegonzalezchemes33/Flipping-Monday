@@ -3,6 +3,7 @@
 // ============================================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { undoMiddleware, type UndoHistory } from "./undo-middleware";
 
 // ----------------------------------------------------------------------------
 // Generador de IDs único — usa crypto.randomUUID() (estándar web, disponible
@@ -91,11 +92,11 @@ export interface SidekickMessage {
 // ----------------------------------------------------------------------------
 
 const USERS: User[] = [
-  { id: "u1", name: "Sofía Reyes", email: "sofia@monday-ai.dev", role: "owner", color: "#0072E5" },
-  { id: "u2", name: "Marco Liu", email: "marco@monday-ai.dev", role: "admin", color: "#00C875" },
-  { id: "u3", name: "Priya Nair", email: "priya@monday-ai.dev", role: "member", color: "#FF642E" },
-  { id: "u4", name: "Diego Alvarez", email: "diego@monday-ai.dev", role: "member", color: "#A25BFF" },
-  { id: "u5", name: "Yuki Tanaka", email: "yuki@monday-ai.dev", role: "member", color: "#FF158A" },
+  { id: "u1", name: "Sofía Reyes", email: "sofia@monday-ai.dev", role: "owner", color: "#0072E5", online: true },
+  { id: "u2", name: "Marco Liu", email: "marco@monday-ai.dev", role: "admin", color: "#00C875", online: true },
+  { id: "u3", name: "Priya Nair", email: "priya@monday-ai.dev", role: "member", color: "#FF642E", online: true },
+  { id: "u4", name: "Diego Alvarez", email: "diego@monday-ai.dev", role: "member", color: "#A25BFF", online: false },
+  { id: "u5", name: "Yuki Tanaka", email: "yuki@monday-ai.dev", role: "member", color: "#FF158A", online: true },
 ];
 
 const TEAMS: Team[] = [
@@ -804,7 +805,7 @@ interface AppState {
   showMondayImport: boolean;
   showSidekick: boolean;
   showSettings: boolean;
-  sidebarView: "boards" | "home" | "dashboards" | "docs" | "team";
+  sidebarView: "boards" | "home" | "dashboards" | "docs" | "team" | "my_work" | "activity";
 
   // Configuración global de la aplicación
   settings: {
@@ -891,6 +892,7 @@ interface AppState {
   deleteItem: (itemId: string) => void;
   duplicateItem: (itemId: string) => void;
   moveItem: (itemId: string, toGroupId: string) => void;
+  reorderItem: (itemId: string, toPosition: number) => void;
   archiveItem: (itemId: string) => void;
 
   // CRUD groups
@@ -950,6 +952,11 @@ interface AppState {
   addFile: (file: Omit<AppFile, "id" | "createdAt">) => void;
   deleteFile: (fileId: string) => void;
 
+  // Undo/Redo
+  _undo: UndoHistory;
+  undo: () => void;
+  redo: () => void;
+
   // ---- Monday.com integration ----
   mondayApiKey: string | null;
   mondayConnected: boolean;
@@ -990,7 +997,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set, get) => ({
+    undoMiddleware<AppState>((set, get) => ({
       users: USERS,
       teams: TEAMS,
       workspaces: WORKSPACES,
@@ -1316,6 +1323,27 @@ export const useAppStore = create<AppState>()(
             },
             ...s.activities,
           ],
+        })),
+
+      reorderItem: (itemId, toPosition) =>
+        set((s) => ({
+          boards: s.boards.map((b) => {
+            const item = b.items.find((i) => i.id === itemId);
+            if (!item) return b;
+            const sameGroup = b.items
+              .filter((i) => i.groupId === item.groupId && i.id !== itemId)
+              .sort((a, b) => a.position - b.position);
+            sameGroup.splice(toPosition, 0, { ...item, position: toPosition });
+            return {
+              ...b,
+              items: b.items.map((i) => {
+                if (i.id === itemId) return { ...i, position: toPosition, updatedAt: new Date().toISOString() };
+                const idx = sameGroup.findIndex((sgi) => sgi.id === i.id);
+                if (idx >= 0) return { ...i, position: idx };
+                return i;
+              }),
+            };
+          }),
         })),
 
       toggleGroupCollapse: (boardId, groupId) =>
@@ -1889,7 +1917,7 @@ export const useAppStore = create<AppState>()(
             workspaces: updatedWorkspaces,
           };
         }),
-    }),
+    }) as any),
     {
       name: "monday-ai-store",
       version: 3, // bump para forzar refresh con favoritos/recents
@@ -1905,8 +1933,11 @@ export const useAppStore = create<AppState>()(
         if (!persistedState.recentBoardIds) persistedState.recentBoardIds = [];
         return persistedState;
       },
-      // No persistir modal state (siempre arrancan cerrados)
+      // No persistir modal state ni undo history (siempre arrancan cerrados)
       partialize: (s) => ({
+        // Excluir _undo explícitamente (no se persiste el history stack)
+        _undo: undefined,
+        // El resto se persiste normalmente
         users: s.users,
         teams: s.teams,
         workspaces: s.workspaces,

@@ -45,6 +45,7 @@ export function CommandPalette() {
   const plans = useAppStore((s) => s.plans);
   const automations = useAppStore((s) => s.automations);
   const setActiveBoard = useAppStore((s) => s.setActiveBoard);
+  const selectItem = useAppStore((s) => s.selectItem);
   const setShowAgentBuilder = useAppStore((s) => s.setShowAgentBuilder);
   const setShowOrchestrator = useAppStore((s) => s.setShowOrchestrator);
   const setShowAutomations = useAppStore((s) => s.setShowAutomations);
@@ -59,6 +60,9 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const updates = useAppStore((s) => s.updates);
+  const users = useAppStore((s) => s.users);
 
   const items: CmdItem[] = useMemo(() => {
     const list: CmdItem[] = [];
@@ -214,15 +218,83 @@ export function CommandPalette() {
       })
     );
 
+    // Items cross-board — búsqueda full-text
+    if (q && q.length >= 1) {
+      const lower = q.toLowerCase();
+      boards.forEach((b) => {
+        b.items.forEach((it) => {
+          // Buscar en nombre del item
+          if (it.name.toLowerCase().includes(lower)) {
+            list.push({
+              id: `search-item-${it.id}`,
+              label: it.name,
+              sub: `Item · ${b.name}`,
+              icon: <span className="text-sm">📋</span>,
+              category: "Items",
+              action: () => {
+                setActiveBoard(b.id);
+                selectItem(it.id);
+                setOpen(false);
+              },
+            });
+          }
+          // Buscar en column values (text)
+          for (const cv of it.columnValues) {
+            const cvText = String(cv.value?.text ?? cv.value?.labelId ?? "");
+            if (cvText.toLowerCase().includes(lower) && cvText.length > 1) {
+              const col = b.columns.find((c) => c.id === cv.columnId);
+              list.push({
+                id: `search-cv-${it.id}-${cv.columnId}`,
+                label: it.name,
+                sub: `${col?.title ?? "Columna"}: ${cvText.slice(0, 80)} · ${b.name}`,
+                icon: <span className="text-sm">🔍</span>,
+                category: "Items",
+                action: () => {
+                  setActiveBoard(b.id);
+                  selectItem(it.id);
+                  setOpen(false);
+                },
+              });
+              break; // solo 1 match por item para no saturar
+            }
+          }
+        });
+      });
+
+      // Buscar en updates
+      updates.forEach((upd) => {
+        if (upd.body.toLowerCase().includes(lower) && upd.body.length > 5) {
+          const author = users.find((u) => u.id === upd.authorId);
+          const parentBoard = boards.find((b) => b.items.some((i) => i.id === upd.itemId));
+          if (parentBoard) {
+            list.push({
+              id: `search-upd-${upd.id}`,
+              label: `Update: ${upd.body.slice(0, 80)}${upd.body.length > 80 ? "…" : ""}`,
+              sub: `${author?.name ?? "Usuario"} · ${parentBoard.name}`,
+              icon: <span className="text-sm">💬</span>,
+              category: "Updates",
+              action: () => {
+                setActiveBoard(parentBoard.id);
+                selectItem(upd.itemId);
+                setOpen(false);
+              },
+            });
+          }
+        }
+      });
+    }
+
     if (!q) return list;
     const lower = q.toLowerCase();
-    return list.filter(
+    const filtered = list.filter(
       (r) =>
         r.label.toLowerCase().includes(lower) ||
         r.sub.toLowerCase().includes(lower) ||
         r.category.toLowerCase().includes(lower)
     );
-  }, [q, boards, agents, plans, automations, activeBoardId]);
+    // Limitar resultados para no saturar
+    return filtered.slice(0, 30);
+  }, [q, boards, agents, plans, automations, activeBoardId, updates, users]);
 
   // Reset selection cuando cambia la query
   useEffect(() => {

@@ -26,10 +26,11 @@ export function HydrationGate({ children }: { children: React.ReactNode }) {
     setMounted(true);
     // Disparar la hidratación manualmente (skipHydration: true en el store
     // evita que zustand lo haga automáticamente en SSR)
+    // Usar la API pública de Zustand persist
     try {
-      const api = (useAppStore as any).persist;
-      if (api && typeof api.rehydrate === "function") {
-        const result = api.rehydrate();
+      const persistApi = useAppStore.persist;
+      if (persistApi && typeof persistApi.rehydrate === "function") {
+        const result = persistApi.rehydrate();
         if (result && typeof result.then === "function") {
           result
             .then(() => useAppStore.getState().setHasHydrated(true))

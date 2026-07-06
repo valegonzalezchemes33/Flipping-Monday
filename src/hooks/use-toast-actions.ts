@@ -15,18 +15,20 @@ export function useToastActions() {
 
   useEffect(() => {
     // Inicializar el count con el estado actual (no tostar al montar)
-    lastActivityCountRef.current = useAppStore.getState().activities.length;
+    let prevCount = useAppStore.getState().activities.length;
+    lastActivityCountRef.current = prevCount;
 
-    const unsubscribe = useAppStore.subscribe((state) => {
-      const currentCount = state.activities.length;
-      if (currentCount > lastActivityCountRef.current) {
-        // Hay nuevas activities — mostrar toast para cada una nueva
-        const newCount = currentCount - lastActivityCountRef.current;
-        const newActivities = state.activities.slice(0, newCount);
+    // Zustand subscribe con listener simple — chequeamos cambios manualmente
+    const unsubscribe = useAppStore.subscribe(() => {
+      const currentCount = useAppStore.getState().activities.length;
+      if (currentCount > prevCount) {
+        // Hay nuevas activities — obtener solo las nuevas
+        const newActivities = useAppStore.getState().activities.slice(0, currentCount - prevCount);
         for (const act of newActivities) {
           showToastForActivity(act.type, act.data);
         }
       }
+      prevCount = currentCount;
       lastActivityCountRef.current = currentCount;
     });
 

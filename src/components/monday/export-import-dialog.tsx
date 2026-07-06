@@ -17,6 +17,28 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Download, Upload, FileJson, CheckCircle2, AlertTriangle } from "lucide-react";
+import { z } from "zod";
+
+// Schema Zod para validación — fuera del componente para no recrearse
+const mondayExportSchema = z.object({
+  version: z.literal("2.0"),
+  exportedAt: z.string(),
+  workspace: z.object({ id: z.string(), name: z.string(), kind: z.enum(["open", "closed"]) }),
+  boards: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    boardKind: z.enum(["public", "private", "shareable"]).optional(),
+    boardType: z.enum(["board", "dashboard"]).optional(),
+    columns: z.array(z.any()).optional(),
+    groups: z.array(z.any()).optional(),
+    items: z.array(z.any()).optional(),
+    views: z.array(z.any()).optional(),
+    automations: z.array(z.any()).optional(),
+  })),
+  users: z.array(z.object({ id: z.string(), name: z.string(), email: z.string() })),
+  teams: z.array(z.object({ id: z.string(), name: z.string(), memberIds: z.array(z.string()) })),
+});
 
 export function ExportImportDialog({
   open,
@@ -155,14 +177,25 @@ export function ExportImportDialog({
         msg: `✓ Dry-run OK · listo para importar`,
       });
 
+      // Validar con Zod (schema externo) antes de importar
+      const validated = mondayExportSchema.safeParse(parsed);
+      if (!validated.success) {
+        const firstIssue = validated.error.issues[0];
+        results.push({
+          type: "error",
+          msg: `Validación fallida: ${firstIssue?.path?.join(".") ?? ""} — ${firstIssue?.message ?? "Estructura JSON inválida"}`,
+        });
+        setImportStatus(results);
+        return;
+      }
+
       // Real import: usar mergeImportedData del store para upsert completo
-      // de boards, users, teams y workspaces (sin duplicados, por ID).
       const { mergeImportedData } = useAppStore.getState();
       mergeImportedData({
-        users: parsed.users as any,
-        teams: parsed.teams as any,
-        workspaces: [parsed.workspace] as any,
-        boards: parsed.boards as any,
+        users: validated.data.users,
+        teams: validated.data.teams,
+        workspaces: [validated.data.workspace],
+        boards: validated.data.boards as any,
       });
 
       const totalItems = parsed.boards.reduce((acc, b) => acc + b.items.length, 0);

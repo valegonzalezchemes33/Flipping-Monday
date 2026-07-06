@@ -64,6 +64,12 @@ export function KanbanView() {
       const cv = it.columnValues.find((v) => v.columnId === groupBy);
       return cv?.value?.labelId === labelId;
     });
+  
+  // Items sin label (no tienen la columna o no tienen label asignado)
+  const unlabeledItems = board.items.filter((it) => {
+    const cv = it.columnValues.find((v) => v.columnId === groupBy);
+    return !cv || !cv.value?.labelId;
+  });
 
   const handleDrop = (labelId: string) => {
     if (!draggingItemId) return;
@@ -153,6 +159,53 @@ export function KanbanView() {
               </div>
             );
           })}
+          
+          {/* Columna catch-all para items sin label */}
+          {unlabeledItems.length > 0 && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverLabelId("__unlabeled__");
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggingItemId) {
+                  const item = board.items.find((i) => i.id === draggingItemId);
+                  if (item) {
+                    updateColumnValue(item.id, groupBy, {});
+                  }
+                  setDraggingItemId(null);
+                  setDragOverLabelId(null);
+                }
+              }}
+              className={cn(
+                "w-72 shrink-0 bg-secondary/30 rounded-lg flex flex-col border border-dashed border-border/60",
+                dragOverLabelId === "__unlabeled__" &&
+                  draggingItemId !== null &&
+                  "ring-2 ring-[#0072E5] ring-inset bg-[#0072E5]/5"
+              )}
+            >
+              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/50">
+                <span className="status-dot" style={{ background: "#C4C4C4" }} />
+                <span className="text-xs font-semibold text-muted-foreground">Sin asignar</span>
+                <span className="text-[10px] text-muted-foreground bg-background px-1.5 py-0.5 rounded-full font-medium ml-auto">
+                  {unlabeledItems.length}
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[calc(100vh-220px)]">
+                {unlabeledItems.map((item) => (
+                  <KanbanCard
+                    key={item.id}
+                    item={item}
+                    columns={board.columns}
+                    users={users}
+                    onClick={() => selectItem(item.id)}
+                    onDragStart={() => setDraggingItemId(item.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

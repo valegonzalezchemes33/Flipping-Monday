@@ -2,9 +2,10 @@
 // API: /api/agent/run — Ejecuta un agente IA con streaming SSE
 // ============================================================================
 // Rutea automaticamente: Groq (cuando hay API key) o Z.ai SDK (fallback gratis).
-// Persiste el resultado en SQLite via Prisma si DATABASE_URL esta configurada.
+// Persiste el resultado en PostgreSQL via Prisma si DATABASE_URL esta configurada.
 import { NextRequest } from "next/server";
 import { chat } from "@/lib/groq-client";
+import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,33 +122,30 @@ export async function POST(req: NextRequest) {
         execError = err?.message ?? "Error desconocido";
         send("error", { message: execError });
       } finally {
-        // Persistir en SQLite (best-effort, no bloquear si falla)
-        try {
-          if (process.env.DATABASE_URL && agentId) {
-            const { PrismaClient } = await import("@prisma/client");
-            const prisma = new PrismaClient();
-            await prisma.agentExecution.create({
-              data: {
-                agentId,
-                itemId: itemId ?? null,
-                status: execError ? "failed" : "completed",
-                output: fullOutput || null,
-                error: execError,
-                tokensUsed,
-                durationMs: Date.now() - startedAt,
-                model: resultModel,
-                backend: resultBackend,
-              },
-            });
-            await prisma.$disconnect();
+          // Persistir en PostgreSQL (best-effort, no bloquear si falla)
+          try {
+            if (process.env.DATABASE_URL && agentId) {
+              await db.agentExecution.create({
+                data: {
+                  agentId,
+                  itemId: itemId ?? null,
+                  status: execError ? "failed" : "completed",
+                  output: fullOutput || null,
+                  error: execError,
+                  tokensUsed,
+                  durationMs: Date.now() - startedAt,
+                  model: resultModel,
+                  backend: resultBackend,
+                },
+              });
+            }
+          } catch (dbErr: any) {
+            console.warn("[agent/run] DB persist failed (non-critical):", dbErr?.message);
           }
-        } catch (dbErr: any) {
-          console.warn("[agent/run] DB persist failed (non-critical):", dbErr?.message);
-        }
 
-        req.signal.removeEventListener("abort", abortListener);
-        try { controller.close(); } catch { /* ya cerrado */ }
-      }
+          req.signal.removeEventListener("abort", abortListener);
+          try { controller.close(); } catch { /* ya cerrado */ }
+        }
     },
   });
 

@@ -22,29 +22,16 @@ import {
   Download,
   Star,
   Clock,
+  User as UserIcon,
+  PanelLeftClose,
+  PanelLeft,
+  Activity,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,7 +77,7 @@ export function Sidebar() {
   const setSidebarView = useAppStore((s) => s.setSidebarView);
   const users = useAppStore((s) => s.users);
   const currentUser = useAppStore((s) => s.currentUserId);
-  const addBoard = useAppStore((s) => s.addBoard);
+  
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const setShowMondayConnect = useAppStore((s) => s.setShowMondayConnect);
   const setShowMondayImport = useAppStore((s) => s.setShowMondayImport);
@@ -105,19 +92,12 @@ export function Sidebar() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(
     Object.fromEntries(workspaces.map((w) => [w.id, true]))
   );
-  const [showAddBoard, setShowAddBoard] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [newBoardName, setNewBoardName] = useState("");
-  const [newBoardWs, setNewBoardWs] = useState("");
 
   const me = users.find((u) => u.id === currentUser);
 
-  const handleAddBoard = () => {
-    if (!newBoardName.trim() || !newBoardWs) return;
-    addBoard(newBoardWs, newBoardName.trim());
-    setExpanded((e) => ({ ...e, [newBoardWs]: true }));
-    setNewBoardName("");
-    setShowAddBoard(null);
+  const handleOpenAddBoard = (wsId: string) => {
+    useAppStore.getState().setShowAddBoard(true);
   };
 
   const handleNav = (view: typeof sidebarView) => {
@@ -125,12 +105,22 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex flex-col w-[256px] h-screen bg-sidebar border-r border-sidebar-border shrink-0">
+    <aside className={cn("relative flex flex-col h-screen bg-sidebar border-r border-sidebar-border shrink-0 transition-all duration-300", collapsed ? "w-[56px]" : "w-[256px]")}>
+      {/* Collapse toggle button */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="absolute -right-3 top-1/2 z-50 w-6 h-6 rounded-full bg-sidebar border border-sidebar-border shadow-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition"
+        title={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+      >
+        {collapsed ? <PanelLeft className="h-3 w-3" /> : <PanelLeftClose className="h-3 w-3" />}
+      </button>
+
       {/* Workspace header — click para crear nuevo workspace */}
       <button
-        className="px-3 py-3 border-b border-sidebar-border flex items-center gap-2.5 hover:bg-sidebar-accent/40 transition group"
-        title="Click para crear nuevo workspace"
+        className={cn("px-3 py-3 border-b border-sidebar-border flex items-center gap-2.5 hover:bg-sidebar-accent/40 transition group", collapsed && "justify-center px-0")}
+        title={collapsed ? workspaces[0]?.name ?? "Acme Workspace" : "Click para crear nuevo workspace"}
         onClick={() => {
+          if (collapsed) { setCollapsed(false); return; }
           const name = window.prompt("Nombre del nuevo workspace:");
           if (name && name.trim()) {
             addWorkspace(name.trim());
@@ -152,7 +142,7 @@ export function Sidebar() {
         <ChevronDown className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
       </button>
 
-      {/* Search / Cmd+K */}
+      {!collapsed && (
       <div className="px-3 py-2.5 border-b border-sidebar-border">
         <button
           onClick={() => setCommandPaletteOpen(true)}
@@ -165,49 +155,71 @@ export function Sidebar() {
           </kbd>
         </button>
       </div>
+      )}
 
-      {/* Quick nav — más compacto y alineado */}
-      <nav className="px-2 py-2 border-b border-sidebar-border space-y-0.5">
+      {/* Quick nav */}
+      <nav className={cn("px-2 py-2 border-b border-sidebar-border space-y-0.5", collapsed && "px-1")}>
         <SidebarNavItem
           icon={<Home className="h-4 w-4" />}
           label="Inicio"
           active={sidebarView === "home"}
+          collapsed={collapsed}
           onClick={() => handleNav("home")}
+        />
+        <SidebarNavItem
+          icon={<UserIcon className="h-4 w-4" />}
+          label="Mi Trabajo"
+          active={sidebarView === "my_work"}
+          collapsed={collapsed}
+          onClick={() => handleNav("my_work")}
         />
         <SidebarNavItem
           icon={<Bot className="h-4 w-4" />}
           label="Agentes IA"
           badge={agents.length}
+          collapsed={collapsed}
           onClick={() => setShowAgentBuilder(true)}
         />
         <SidebarNavItem
           icon={<Sparkles className="h-4 w-4" />}
           label="Orquestador"
+          collapsed={collapsed}
           onClick={() => setShowOrchestrator(true)}
         />
         <SidebarNavItem
           icon={<Zap className="h-4 w-4" />}
           label="Automatizaciones"
           badge={automations.length}
+          collapsed={collapsed}
           onClick={() => setShowAutomations(true)}
         />
         <SidebarNavItem
           icon={<BarChart3 className="h-4 w-4" />}
           label="Dashboards"
           active={sidebarView === "dashboards"}
+          collapsed={collapsed}
           onClick={() => handleNav("dashboards")}
         />
         <SidebarNavItem
           icon={<FileText className="h-4 w-4" />}
           label="Docs"
           active={sidebarView === "docs"}
+          collapsed={collapsed}
           onClick={() => handleNav("docs")}
+        />
+        <SidebarNavItem
+          icon={<Activity className="h-4 w-4" />}
+          label="Actividad"
+          active={sidebarView === "activity"}
+          collapsed={collapsed}
+          onClick={() => handleNav("activity")}
         />
         <SidebarNavItem
           icon={<Users className="h-4 w-4" />}
           label="Equipo"
           badge={users.length}
           active={sidebarView === "team"}
+          collapsed={collapsed}
           onClick={() => handleNav("team")}
         />
       </nav>
@@ -294,7 +306,7 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* Integraciones — Monday.com connect */}
+      {!collapsed && (
       <div className="px-2 py-2 border-b border-sidebar-border">
         <div className="text-[10px] uppercase font-bold text-muted-foreground/70 px-2 py-1 tracking-wider">
           Integraciones
@@ -340,8 +352,9 @@ export function Sidebar() {
           </button>
         )}
       </div>
+      )}
 
-      {/* Workspaces + boards — scroll area */}
+      {!collapsed && (
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {workspaces.map((ws) => {
           const wsBoards = boards.filter((b) => b.workspaceId === ws.id);
@@ -366,10 +379,7 @@ export function Sidebar() {
                   </span>
                 </button>
                 <button
-                  onClick={() => {
-                    setNewBoardWs(ws.id);
-                    setShowAddBoard(ws.id);
-                  }}
+                  onClick={() => handleOpenAddBoard(ws.id)}
                   className="p-1 rounded hover:bg-sidebar-accent text-muted-foreground opacity-0 group-hover:opacity-100 transition shrink-0"
                   title="Añadir board"
                 >
@@ -380,10 +390,7 @@ export function Sidebar() {
                 <div className="ml-3 mt-0.5 space-y-0.5 border-l border-sidebar-border pl-1.5">
                   {wsBoards.length === 0 && (
                     <button
-                      onClick={() => {
-                        setNewBoardWs(ws.id);
-                        setShowAddBoard(ws.id);
-                      }}
+                      onClick={() => handleOpenAddBoard(ws.id)}
                       className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground hover:text-[#0072E5] rounded-md hover:bg-sidebar-accent/40 transition"
                     >
                       <Plus className="h-3 w-3" />
@@ -470,7 +477,7 @@ export function Sidebar() {
           );
         })}
 
-        {/* Add workspace — al final, sutil */}
+        {/* Add workspace */}
         <button
           onClick={() => addWorkspace("New Workspace")}
           className="w-full flex items-center gap-1.5 px-2 py-1.5 mt-2 text-[11px] text-muted-foreground hover:text-[#0072E5] rounded-md hover:bg-sidebar-accent/40 transition"
@@ -479,93 +486,42 @@ export function Sidebar() {
           Nuevo workspace
         </button>
       </div>
+      )}
 
-      {/* User — más limpio */}
-      <div className="border-t border-sidebar-border p-2 flex items-center gap-2.5 hover:bg-sidebar-accent/30 rounded-none transition cursor-pointer">
-        <Avatar className="h-8 w-8 ring-2 ring-background">
-          <AvatarFallback
-            className="text-white text-xs font-semibold"
-            style={{ background: me?.color }}
-          >
-            {me?.name
-              .split(" ")
-              .map((p) => p[0])
-              .slice(0, 2)
-              .join("")}
-          </AvatarFallback>
-        </Avatar>
+      {/* User */}
+      <div className={cn("border-t border-sidebar-border p-2 flex items-center gap-2.5 hover:bg-sidebar-accent/30 rounded-none transition cursor-pointer", collapsed && "justify-center")}>
+        <div className="relative shrink-0">
+          <Avatar className="h-8 w-8 ring-2 ring-background">
+            <AvatarFallback
+              className="text-white text-xs font-semibold"
+              style={{ background: me?.color }}
+            >
+              {me?.name
+                .split(" ")
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join("")}
+            </AvatarFallback>
+          </Avatar>
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#00C875] rounded-full border-2 border-sidebar" />
+        </div>
+        {!collapsed && (
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium truncate">{me?.name}</div>
           <div className="text-[10px] text-muted-foreground truncate">{me?.email}</div>
         </div>
+        )}
         <Button
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-          title="Settings — abrir Sidekick IA"
-          onClick={() => useAppStore.getState().setShowSidekick(true)}
+          title="Abrir configuración"
+          onClick={() => useAppStore.getState().setShowSettings(true)}
         >
           <Settings className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      {/* Add Board modal */}
-      <Dialog open={!!showAddBoard} onOpenChange={(o) => !o && setShowAddBoard(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base flex items-center gap-2">
-              <LayoutGrid className="h-4 w-4 text-[#0072E5]" />
-              Crear board
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Plantilla básica (name, status, people, date) con grupo inicial.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Nombre del board *</Label>
-              <Input
-                value={newBoardName}
-                onChange={(e) => setNewBoardName(e.target.value)}
-                placeholder="Ej: Pipeline Q4"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && handleAddBoard()}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Workspace</Label>
-              <Select value={newBoardWs} onValueChange={setNewBoardWs}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Selecciona workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workspaces.map((w) => (
-                    <SelectItem key={w.id} value={w.id} className="text-sm">
-                      <span className="flex items-center gap-2">
-                        <Folder className="h-3 w-3" style={{ color: w.color }} />
-                        {w.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setShowAddBoard(null)}>
-              Cancelar
-            </Button>
-            <Button
-              size="sm"
-              className="bg-[#0072E5] hover:bg-[#0058B5] text-white"
-              onClick={handleAddBoard}
-              disabled={!newBoardName.trim() || !newBoardWs}
-            >
-              Crear board
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   );
 }
@@ -576,18 +532,21 @@ function SidebarNavItem({
   badge,
   onClick,
   active,
+  collapsed,
 }: {
   icon: React.ReactNode;
   label: string;
   badge?: number;
   onClick?: () => void;
   active?: boolean;
+  collapsed?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
         "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm transition",
+        collapsed ? "justify-center px-0" : "",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
           : "text-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
@@ -596,8 +555,10 @@ function SidebarNavItem({
       <span className={cn("shrink-0", active ? "text-[#0072E5]" : "text-muted-foreground")}>
         {icon}
       </span>
-      <span className="flex-1 text-left">{label}</span>
-      {badge !== undefined && badge > 0 && (
+      {!collapsed && (
+        <span className="flex-1 text-left">{label}</span>
+      )}
+      {!collapsed && badge !== undefined && badge > 0 && (
         <span
           className={cn(
             "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",

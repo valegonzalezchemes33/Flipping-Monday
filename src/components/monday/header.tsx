@@ -17,6 +17,8 @@ import {
   Zap,
   AtSign,
   Settings,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
@@ -63,6 +65,8 @@ export function Header() {
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const setShowExportImport = useAppStore((s) => s.setShowExportImport);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const theme = useAppStore((s) => s.settings.theme);
   const hasApiKey = useAppStore((s) => !!(s.settings.groqApiKey || s.settings.openaiApiKey || s.settings.anthropicApiKey));
   // Solo el nombre del workspace activo (primitivo, estable)
   const wsName = useAppStore((s) => {
@@ -320,6 +324,24 @@ export function Header() {
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 hover:bg-secondary"
+              onClick={() => {
+                const next = theme === "dark" ? "light" : "dark";
+                updateSettings({ theme: next });
+              }}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          </TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

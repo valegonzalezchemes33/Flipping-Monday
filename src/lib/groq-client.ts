@@ -337,11 +337,22 @@ export async function chat(
   ).trim();
   const hasGroqKey = resolvedKey.length > 10;
 
-  // Resolver el modelo: si hay key de Groq y el modelo es Z.ai (default),
-  // promover automaticamente a Llama 3.3 70B para aprovechar la key.
+  // Resolver el modelo: si hay key de Groq y el usuario NO eligio un modelo especifico
+  // (vacío, "default", "auto"), usar el mejor modelo NVIDIA disponible.
+  // Si el usuario eligió explícitamente un modelo Z.ai (glm-4.6, glm-4.5-air), respetarlo.
+  // Si el usuario eligió un modelo NVIDIA (llama, deepseek), usarlo directamente.
   let modelId = typeof opts.model === "string" ? opts.model : "glm-4.6";
-  if (hasGroqKey && (modelId === "glm-4.6" || modelId === "glm-4.5-air" || !modelId)) {
-    modelId = "meta/llama-3.3-70b-instruct";
+  const isZaiModel = modelId.startsWith("glm-");
+  const isAutoOrDefault = !opts.model || opts.model === "default" || opts.model === "auto";
+  
+  if (hasGroqKey && (isAutoOrDefault || isZaiModel)) {
+    // Solo promover si el usuario no eligió explícitamente un modelo Z.ai
+    if (isAutoOrDefault) {
+      modelId = "meta/llama-3.3-70b-instruct";
+    } else {
+      console.log(`[groq] Usuario eligió Z.ai model (${modelId}) — respetando elección, usando Z.ai`);
+      // No promover, dejar que caiga a Z.ai abajo
+    }
   }
 
   if (hasGroqKey) {
