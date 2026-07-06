@@ -38,12 +38,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-ENV DATABASE_URL=file:/app/data/custom.db
+# DATABASE_URL debe ser provisto por docker-compose o .env (Postgres externo)
 # Z.ai SDK key — se puede override desde docker-compose
 ENV ZAI_API_KEY=""
 
 # Instalar solo lo mínimo necesario
-# openssl para Prisma, sqlite3 para debug
+# openssl para Prisma
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     && rm -rf /var/lib/apt/lists/*

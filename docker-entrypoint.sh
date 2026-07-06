@@ -1,24 +1,41 @@
 #!/bin/sh
 # ============================================================================
-# docker-entrypoint.sh — inicializa la DB y arranca el servidor Next.js
+# docker-entrypoint.sh — inicializa la DB (Postgres externo) y arranca Next.js
 # ============================================================================
 set -e
 
 echo "=== monday-AI Docker Startup ==="
 
-# Si no existe la DB, crearla con Prisma
-if [ ! -f /app/data/custom.db ]; then
-  echo "→ Creando base de datos SQLite..."
-  cd /app
-  # Usar npx prisma porque no tenemos bun en el runtime image
-  npx --yes prisma db push --skip-generate 2>/dev/null || \
-    echo "  (DB ya existe o se creará automáticamente)"
-else
-  echo "→ DB existente detectada, saltando creación"
+# Validar que DATABASE_URL apunta a Postgres (no a SQLite file:)
+if [ -z "$DATABASE_URL" ]; then
+  echo "❌ ERROR: DATABASE_URL no está definido."
+  echo "   Define DATABASE_URL en docker-compose.yml o .env apuntando a tu Postgres externo."
+  echo "   Ejemplo: postgresql://user:pass@host:5432/monday_ai?schema=public"
+  exit 1
 fi
 
-echo "→ Arrancando servidor Next.js en puerto 3000..."
-echo "→ Accede a: http://localhost:3000"
+if echo "$DATABASE_URL" | grep -q '^file:'; then
+  echo "❌ ERROR: DATABASE_URL apunta a SQLite (file:)."
+  echo "   monday-AI en Docker requiere PostgreSQL externo."
+  echo "   Actualiza DATABASE_URL a una URL de Postgres."
+  exit 1
+fi
+
+echo "→ Validando conexión a PostgreSQL..."
+cd /app
+
+# Aplicar migraciones pendientes (idempotente, no rompe si ya están)
+echo "→ Aplicando migraciones de Prisma..."
+npx prisma migrate deploy 2>&1 | sed 's/^/  /'
+
+# Si hay seed script, ejecutarlo (opcional — comenta si no lo necesitas)
+if [ -f prisma/seed.ts ] || [ -f prisma/seed.js ]; then
+  echo "→ Ejecutando seed..."
+  npx prisma db seed 2>&1 | sed 's/^/  /' || echo "  (seed no disponible o falló, continuando)"
+fi
+
+echo "→ Arrancando servidor Next.js en puerto ${PORT:-3000}..."
+echo "→ Accede a: http://localhost:${PORT:-3000}"
 echo ""
 
 # Arrancar el servidor standalone
