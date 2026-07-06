@@ -516,6 +516,7 @@ function GroupBlock({
   onDragStart,
   onDragOver,
   onDrop,
+  onDropOnItem,
   addingToGroup,
   setAddingToGroup,
   newItemName,
