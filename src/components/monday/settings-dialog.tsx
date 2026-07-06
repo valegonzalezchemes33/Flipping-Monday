@@ -85,6 +85,10 @@ function ApiKeyField({ label, provider, value, onChange, placeholder, hint }: Ap
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder ?? "sk-..."}
             className="h-8 text-xs font-mono pr-8"
+            autoComplete="new-password"
+            autoCorrect="off"
+            spellCheck="false"
+            data-1p-ignore
           />
           <button
             type="button"
