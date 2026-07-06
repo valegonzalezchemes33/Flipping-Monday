@@ -134,8 +134,6 @@ export function SidekickChat() {
   const setThinking = useAppStore((s) => s.setSidekickThinking);
   // NVIDIA NIM es el único provider de IA. La API key se lee de settings o usa la hardcodeada.
   const nvidiaApiKey = useAppStore((s) => s.settings?.nvidiaApiKey || "");
-  // Prioridad: key especÃ­fica del sidekick > key global de Settings
-  const groqApiKey = sidekickSpecificKey || groqApiKeyFromSettings || "";
 
   // Store actions que el agente puede invocar.
   // IMPORTANTE: useMemo para que el objeto sea estable entre renders â€” sin esto,
