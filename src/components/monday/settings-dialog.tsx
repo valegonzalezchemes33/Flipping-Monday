@@ -59,6 +59,7 @@ interface ApiKeyFieldProps {
 function ApiKeyField({ label, provider, value, onChange, placeholder, hint }: ApiKeyFieldProps) {
   const [show, setShow] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [localValue, setLocalValue] = useState(value || "");
   const color = PROVIDER_COLORS[provider] ?? "#888";
 
   return (
@@ -81,8 +82,11 @@ function ApiKeyField({ label, provider, value, onChange, placeholder, hint }: Ap
         <div className="relative flex-1">
           <Input
             type={show ? "text" : "password"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
+            value={localValue}
+            onChange={(e) => {
+              setLocalValue(e.target.value);
+              onChange(e.target.value);
+            }}
             placeholder={placeholder ?? "sk-..."}
             className="h-8 text-xs font-mono pr-8"
             autoComplete="new-password"
@@ -103,12 +107,13 @@ function ApiKeyField({ label, provider, value, onChange, placeholder, hint }: Ap
           variant="outline"
           className="h-8 text-xs"
           onClick={() => {
+            onChange(localValue);
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
           }}
-          disabled={!value}
+          disabled={!localValue}
         >
-          {saved ? <Check className="h-3 w-3 text-emerald-600" /> : value ? "Guardado ✓" : "Guardar"}
+          {saved ? <Check className="h-3 w-3 text-emerald-600" /> : localValue ? "Guardado ✓" : "Guardar"}
         </Button>
       </div>
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
