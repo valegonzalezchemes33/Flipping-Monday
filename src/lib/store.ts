@@ -1938,6 +1938,7 @@ export const useAppStore = create<AppState>()(
         mondayApiKey: s.mondayApiKey,
         mondayConnected: s.mondayConnected,
         mondayAccount: s.mondayAccount,
+        settings: s.settings,
         sidekickMessages: s.sidekickMessages,
         favoriteBoardIds: s.favoriteBoardIds,
         recentBoardIds: s.recentBoardIds,

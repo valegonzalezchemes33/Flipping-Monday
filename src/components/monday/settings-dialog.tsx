@@ -104,7 +104,7 @@ function ApiKeyField({ label, provider, value, onChange, placeholder, hint }: Ap
           }}
           disabled={!value}
         >
-          {saved ? <Check className="h-3 w-3 text-emerald-600" /> : "Guardar"}
+          {saved ? <Check className="h-3 w-3 text-emerald-600" /> : value ? "Guardado ✓" : "Guardar"}
         </Button>
       </div>
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
