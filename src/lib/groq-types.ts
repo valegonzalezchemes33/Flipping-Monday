@@ -37,7 +37,7 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  groqApiKey?: string;
+  groqApiKey?: string; // mantiene compatibilidad, no se usa
   signal?: AbortSignal;
 }
 
@@ -46,5 +46,5 @@ export interface ChatResult {
   toolCalls: GroqToolCall[];
   finishReason: string;
   model: string;
-  backend: "groq" | "zai";
+  backend: "nvidia";
 }

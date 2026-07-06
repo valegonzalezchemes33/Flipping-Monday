@@ -29,17 +29,11 @@ import {
 } from "lucide-react";
 
 const PROVIDER_COLORS: Record<string, string> = {
-  zai: "#0072E5",
-  groq: "#FF642E",
-  openai: "#00A67E",
-  anthropic: "#D97757",
+  nvidia: "#76B900",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  zai: "Z.ai",
-  groq: "Groq",
-  openai: "OpenAI",
-  anthropic: "Anthropic",
+  nvidia: "NVIDIA NIM",
 };
 
 const TAB_ITEMS = [
@@ -127,34 +121,18 @@ function TabAI() {
     <div className="space-y-6">
       <div className="space-y-4">
         <div>
-          <h3 className="text-sm font-semibold mb-0.5">API Keys de proveedores</h3>
+          <h3 className="text-sm font-semibold mb-0.5">API Key de NVIDIA NIM</h3>
           <p className="text-[11px] text-muted-foreground">
-            Las keys se guardan localmente en tu dispositivo y nunca salen del navegador.
+            Única API key necesaria. Se envía al servidor para todas las llamadas al modelo.
           </p>
         </div>
         <ApiKeyField
-          label="API Key de Groq"
-          provider="groq"
-          value={settings.groqApiKey ?? ""}
-          onChange={(v) => updateSettings({ groqApiKey: v || null })}
-          placeholder="gsk_..."
-          hint="Para modelos Llama 3 y DeepSeek R1 (groq.com/keys)"
-        />
-        <ApiKeyField
-          label="API Key de OpenAI"
-          provider="openai"
-          value={settings.openaiApiKey ?? ""}
-          onChange={(v) => updateSettings({ openaiApiKey: v || null })}
-          placeholder="sk-proj-..."
-          hint="Para modelos GPT-4o (platform.openai.com)"
-        />
-        <ApiKeyField
-          label="API Key de Anthropic"
-          provider="anthropic"
-          value={settings.anthropicApiKey ?? ""}
-          onChange={(v) => updateSettings({ anthropicApiKey: v || null })}
-          placeholder="sk-ant-..."
-          hint="Para modelos Claude (console.anthropic.com)"
+          label="NVIDIA NIM API Key"
+          provider="nvidia"
+          value={settings.nvidiaApiKey ?? ""}
+          onChange={(v) => updateSettings({ nvidiaApiKey: v || null })}
+          placeholder="nvapi-..."
+          hint="API key de NVIDIA NIM (integrate.api.nvidia.com)"
         />
       </div>
 

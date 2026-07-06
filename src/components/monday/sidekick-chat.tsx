@@ -132,12 +132,10 @@ export function SidekickChat() {
   const clearMessages = useAppStore((s) => s.clearSidekickMessages);
   const thinking = useAppStore((s) => s.sidekickThinking);
   const setThinking = useAppStore((s) => s.setSidekickThinking);
-  const groqApiKeyFromSettings = useAppStore((s) => s.settings?.groqApiKey);
-  const sidekickSpecificKey = useAppStore((s) => s.sidekickGroqApiKey);
+  // NVIDIA NIM es el único provider de IA. La API key se lee de settings o usa la hardcodeada.
+  const nvidiaApiKey = useAppStore((s) => s.settings?.nvidiaApiKey || "");
   // Prioridad: key especÃ­fica del sidekick > key global de Settings
   const groqApiKey = sidekickSpecificKey || groqApiKeyFromSettings || "";
-  const setGroqApiKey = useAppStore((s) => s.setSidekickGroqApiKey);
-  const openGlobalSettings = useAppStore((s) => s.setShowSettings);
 
   // Store actions que el agente puede invocar.
   // IMPORTANTE: useMemo para que el objeto sea estable entre renders â€” sin esto,
@@ -196,7 +194,6 @@ export function SidekickChat() {
 
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: number; mime: string; content: string }[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -354,7 +351,7 @@ export function SidekickChat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: groqMessages,
-            groqApiKey: groqApiKey,
+            groqApiKey: nvidiaApiKey,
             // Enviar el modelo del settings para que el route lo use
             model: useAppStore.getState().settings?.defaultModel,
             context: {
@@ -514,7 +511,7 @@ export function SidekickChat() {
       addMessage,
       updateMessage,
       setThinking,
-      groqApiKey,
+      nvidiaApiKey,
       me,
       activeBoard,
       activeBoardId,
@@ -567,9 +564,7 @@ export function SidekickChat() {
   };
 
   const handleSaveApiKey = () => {
-    setGroqApiKey(apiKeyInput.trim() || null);
     setShowSettings(false);
-    setApiKeyInput("");
   };
 
   return (
@@ -586,15 +581,15 @@ export function SidekickChat() {
             <div>
               <div className="text-sm font-bold">Sidekick</div>
               <div className="text-[10px] text-muted-foreground font-normal flex items-center gap-1">
-                {groqApiKey ? (
+                {nvidiaApiKey ? (
                   <>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00C875]" />
-                    Groq conectado
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#76B900]" />
+                    NVIDIA NIM conectado
                   </>
                 ) : (
                   <>
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#FFC700]" />
-                    Modo demo (Z.ai)
+                    Usando API key por defecto
                   </>
                 )}
               </div>
@@ -607,15 +602,12 @@ export function SidekickChat() {
                       variant="ghost"
                       size="sm"
                       className="h-7 w-7 p-0 text-muted-foreground"
-                      onClick={() => {
-                        setApiKeyInput(groqApiKey ?? "");
-                        setShowSettings(!showSettings);
-                      }}
+                      onClick={() => setShowSettings(!showSettings)}
                     >
                       <Settings2 className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Configurar API key</TooltipContent>
+                  <TooltipContent side="bottom">Configuración de IA</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
@@ -645,34 +637,24 @@ export function SidekickChat() {
         {showSettings && (
           <div className="px-4 py-3 border-b border-border bg-secondary/30 fade-in">
             <div className="text-xs font-semibold mb-1.5">
-              Groq API Key (opcional)
+              NVIDIA NIM — único provider de IA
             </div>
-            <input
-              type="password"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="gsk_..."
-              className="w-full h-8 text-xs px-2 rounded border border-border bg-card font-mono"
-            />
-            <div className="flex items-center gap-2 mt-2">
-              <Button
-                size="sm"
-                className="h-7 text-xs bg-[#0072E5] hover:bg-[#0058B5]"
-                onClick={handleSaveApiKey}
-              >
-                Guardar
-              </Button>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              La API key de NVIDIA NIM se configura en ⚙️ Settings &gt; IA &amp; Modelos.
+              Todas las llamadas al modelo usan este único provider.
+            </p>
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => setShowSettings(false)}
               >
-                Cancelar
+                Cerrar
               </Button>
               <button
                 className="text-[10px] text-[#0072E5] hover:underline ml-auto"
-                onClick={() => { setShowSettings(false); openGlobalSettings(true); }}
+                onClick={() => { setShowSettings(false); useAppStore.getState().setShowSettings(true); }}
               >
                 Abrir Settings →
               </button>
@@ -954,10 +936,10 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: SidekickMessag
             <span
               className={cn(
                 "inline-block w-1.5 h-1.5 rounded-full",
-                msg.backend === "groq" ? "bg-[#FF642E]" : "bg-[#00C875]"
+                msg.backend === "nvidia" ? "bg-[#76B900]" : "bg-[#00C875]"
               )}
             />
-            {msg.backend === "groq" ? "Groq" : "Z.ai"} Â· {msg.model}
+            NVIDIA · {msg.model}
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 // ============================================================================
 // API: /api/agent/run — Ejecuta un agente IA con streaming SSE
 // ============================================================================
-// Rutea automaticamente: Groq (cuando hay API key) o Z.ai SDK (fallback gratis).
+// Usa NVIDIA NIM como único provider de IA.
 // Persiste el resultado en PostgreSQL via Prisma si DATABASE_URL esta configurada.
 import { NextRequest } from "next/server";
 import { chat } from "@/lib/groq-client";
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   const {
     systemPrompt, temperature, maxTokens, userPrompt, agentName,
-    agentId, itemId, model = "glm-4.6", groqApiKey,
+    agentId, itemId,    model = "meta/llama-3.3-70b-instruct", groqApiKey,
   } = body;
 
   if (!systemPrompt || !userPrompt) {
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       let fullOutput = "";
       let tokensUsed = 0;
       let resultModel = model;
-      let resultBackend: "groq" | "zai" = "zai";
+      let resultBackend: "nvidia" = "nvidia";
       let execError: string | null = null;
 
       try {

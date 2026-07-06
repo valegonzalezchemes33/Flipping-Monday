@@ -67,7 +67,7 @@ export function Header() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const theme = useAppStore((s) => s.settings.theme);
-  const hasApiKey = useAppStore((s) => !!(s.settings.groqApiKey || s.settings.openaiApiKey || s.settings.anthropicApiKey));
+  const hasApiKey = useAppStore((s) => !!(s.settings.nvidiaApiKey));
   // Solo el nombre del workspace activo (primitivo, estable)
   const wsName = useAppStore((s) => {
     const b = s.boards.find((x) => x.id === s.activeBoardId);

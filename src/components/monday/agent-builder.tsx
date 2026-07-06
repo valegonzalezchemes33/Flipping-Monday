@@ -69,17 +69,11 @@ const COST_LABELS: Record<ModelInfo["costTier"], { label: string; color: string 
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  zai: "#0072E5",
-  groq: "#FF642E",
-  openai: "#00A67E",
-  anthropic: "#D97757",
+  nvidia: "#76B900",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  zai: "Z.ai",
-  groq: "Groq",
-  openai: "OpenAI",
-  anthropic: "Anthropic",
+  nvidia: "NVIDIA NIM",
 };
 
 const BADGE_CONFIG: Record<string, { label: string; color: string }> = {

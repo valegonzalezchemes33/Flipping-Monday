@@ -235,9 +235,9 @@ export interface Agent {
   model: string;
   /** Configuración de provider opcional por agente */
   modelConfig?: {
-    provider: "zai" | "groq" | "openai" | "anthropic";
-    /** Referencia a qué API key usar (nombre del campo en settings) */
-    apiKeyRef?: "groqApiKey" | "openaiApiKey" | "anthropicApiKey";
+    provider: "nvidia";
+    /** Referencia a qué API key usar */
+    apiKeyRef?: "nvidiaApiKey";
   };
   temperature: number;
   maxTokens: number;

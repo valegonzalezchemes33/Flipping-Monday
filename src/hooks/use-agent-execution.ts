@@ -16,7 +16,7 @@ export function useAgentExecution() {
   const addUpdate = useAppStore((s) => s.addUpdate);
   const users = useAppStore((s) => s.users);
   const currentUser = useAppStore((s) => s.currentUserId);
-  const groqApiKey = useAppStore((s) => s.settings?.groqApiKey || s.sidekickGroqApiKey || "");
+  const nvidiaApiKey = useAppStore((s) => s.settings?.nvidiaApiKey || "");
 
   const runAgent = useCallback(
     async (
@@ -71,7 +71,7 @@ Devuelve tu respuesta siguiendo el system prompt. Si pides JSON, devuelve solo J
             maxTokens: agent.maxTokens,
             userPrompt,
             itemId: item?.id,
-            groqApiKey: groqApiKey || undefined,
+            groqApiKey: nvidiaApiKey || undefined,
           }),
           signal: controller.signal,
         });
@@ -159,7 +159,7 @@ Devuelve tu respuesta siguiendo el system prompt. Si pides JSON, devuelve solo J
         return execId;
       }
     },
-    [addExecution, updateExecution, appendStreamChunk, addUpdate, users, currentUser, groqApiKey]
+    [addExecution, updateExecution, appendStreamChunk, addUpdate, users, currentUser, nvidiaApiKey]
   );
 
   const cancel = useCallback((execId: string) => {

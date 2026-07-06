@@ -141,8 +141,7 @@ export function AgentPanel({ itemId }: { itemId: string }) {
                         {(() => {
                           const info = MODEL_CATALOG.find(m => m.id === agent.model);
                           const providerColors: Record<string,string> = {
-                            zai: "#0072E5", groq: "#FF642E",
-                            openai: "#00A67E", anthropic: "#D97757",
+                            nvidia: "#76B900",
                           };
                           const color = info ? (providerColors[info.provider] ?? "#888") : "#888";
                           const label = info?.name ?? agent.model;

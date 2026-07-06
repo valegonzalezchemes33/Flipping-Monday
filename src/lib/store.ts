@@ -81,7 +81,7 @@ export interface SidekickMessage {
   // Para mensajes de tool (resultado)
   toolCallId?: string;
   // Metadata
-  backend?: "groq" | "zai";
+  backend?: "nvidia";
   model?: string;
   createdAt: string;
   streaming?: boolean;
@@ -809,12 +809,8 @@ interface AppState {
 
   // Configuración global de la aplicación
   settings: {
-    /** API key de Groq (proveedor de modelos Llama / DeepSeek) */
-    groqApiKey: string | null;
-    /** API key de OpenAI (futuro soporte GPT-4o) */
-    openaiApiKey: string | null;
-    /** API key de Anthropic (futuro soporte Claude) */
-    anthropicApiKey: string | null;
+    /** API key de NVIDIA NIM */
+    nvidiaApiKey: string | null;
     /** Modelo por default para nuevos agentes */
     defaultModel: string;
     /** Temperatura por default para nuevos agentes */
@@ -827,8 +823,6 @@ interface AppState {
 
   // Sidekick chat
   sidekickMessages: SidekickMessage[];
-  /** @deprecated Usar settings.groqApiKey. Mantenido por compatibilidad. */
-  sidekickGroqApiKey: string | null;
   sidekickThinking: boolean;
 
   // Board toolbar state
@@ -876,7 +870,6 @@ interface AppState {
   addSidekickMessage: (msg: SidekickMessage) => void;
   updateSidekickMessage: (id: string, patch: Partial<SidekickMessage>) => void;
   clearSidekickMessages: () => void;
-  setSidekickGroqApiKey: (key: string | null) => void;
   setSidekickThinking: (v: boolean) => void;
 
   // Toolbar actions
@@ -1045,16 +1038,13 @@ export const useAppStore = create<AppState>()(
       showSettings: false,
       sidebarView: "boards",
       settings: {
-        groqApiKey: null,
-        openaiApiKey: null,
-        anthropicApiKey: null,
-        defaultModel: "glm-4.6",
+        nvidiaApiKey: null,
+        defaultModel: "meta/llama-3.3-70b-instruct",
         defaultTemperature: 0.4,
         theme: "dark",
         language: "es",
       },
       sidekickMessages: [],
-      sidekickGroqApiKey: null,
       sidekickThinking: false,
       filters: [],
       sorts: [],
@@ -1113,10 +1103,6 @@ export const useAppStore = create<AppState>()(
       updateSettings: (patch) =>
         set((s) => ({
           settings: { ...s.settings, ...patch },
-          // Sincronizar sidekickGroqApiKey por compatibilidad
-          sidekickGroqApiKey: patch.groqApiKey !== undefined
-            ? patch.groqApiKey
-            : s.sidekickGroqApiKey,
         })),
 
       // ---- Favoritos y Recents ----
@@ -1134,8 +1120,6 @@ export const useAppStore = create<AppState>()(
       // ---- Sidekick chat ----
       addSidekickMessage: (msg) =>
         set((s) => {
-          // Idempotente: no agregar si ya existe un mensaje con el mismo ID
-          // (evita duplicados por React StrictMode que ejecuta efectos dos veces)
           if (s.sidekickMessages.some((m) => m.id === msg.id)) return s;
           return { sidekickMessages: [...s.sidekickMessages, msg] };
         }),
@@ -1146,7 +1130,6 @@ export const useAppStore = create<AppState>()(
           ),
         })),
       clearSidekickMessages: () => set({ sidekickMessages: [] }),
-      setSidekickGroqApiKey: (key) => set({ sidekickGroqApiKey: key }),
       setSidekickThinking: (v) => set({ sidekickThinking: v }),
 
       setFilters: (f) => set({ filters: f }),
@@ -1956,7 +1939,6 @@ export const useAppStore = create<AppState>()(
         mondayConnected: s.mondayConnected,
         mondayAccount: s.mondayAccount,
         sidekickMessages: s.sidekickMessages,
-        sidekickGroqApiKey: s.sidekickGroqApiKey,
         favoriteBoardIds: s.favoriteBoardIds,
         recentBoardIds: s.recentBoardIds,
       }),

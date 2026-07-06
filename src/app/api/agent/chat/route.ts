@@ -41,15 +41,8 @@ export async function POST(req: NextRequest) {
 
   const { messages, groqApiKey, context, model: requestedModel } = body;
 
-  // Elegir modelo: si hay key de Groq y no se especificó un modelo Z.ai, usar Groq.
-  // Si el requestedModel es un modelo de Groq ya (llama, deepseek) y hay key, usarlo.
-  // Si no hay key de Groq, usar glm-4.6 (Z.ai, siempre gratis).
-  const hasGroqKey = !!(groqApiKey && groqApiKey.trim().length > 10);
-  // Usar modelo NVIDIA integrate (Llama 3.3 70B) como default cuando hay key
-  // El ID real en NVIDIA integrate API es meta/llama-3.3-70b-instruct
-  const defaultGroqModel = "meta/llama-3.3-70b-instruct";
-  const modelToUse = requestedModel ||
-    (hasGroqKey ? defaultGroqModel : "glm-4.6");
+  // NVIDIA NIM es el único provider. Siempre usar Llama 3.3 70B por defecto.
+  const modelToUse = requestedModel || "meta/llama-3.3-70b-instruct";
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response(JSON.stringify({ error: "messages[] requerido" }), {
