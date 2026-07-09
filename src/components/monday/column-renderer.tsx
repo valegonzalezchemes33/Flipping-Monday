@@ -3,7 +3,7 @@
 // ColumnRenderer — registry pattern para renderizar cada tipo de columna Monday
 // Visualmente pulido: dots de status, avatares consistentes, progress bars, AI buttons
 // ============================================================================
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Check,
   ChevronDown,
@@ -16,8 +16,6 @@ import {
   Phone,
   Link as LinkIcon,
   Star,
-  ArrowRight,
-  ArrowLeft,
 } from "lucide-react";
 import type { ColumnDef, ColumnValue, Item, User } from "@/lib/types";
 import {
@@ -55,12 +53,7 @@ export function ColumnRenderer({ column, value, item, users, compact }: Props) {
       return <TextCell column={column} value={value} item={item} compact={compact} />;
     case "status":
     case "priority":
-    case "dropdown":
-      // dropdown usa el mismo renderer que status (lista de labels seleccionables)
       return <StatusCell column={column} value={value} item={item} compact={compact} />;
-    case "tags":
-      // tags: múltiples valores separados por coma, renderizados como chips
-      return <TagsCell column={column} value={value} item={item} compact={compact} />;
     case "people":
       return <PeopleCell column={column} value={value} item={item} users={users} compact={compact} />;
     case "date":
@@ -71,12 +64,6 @@ export function ColumnRenderer({ column, value, item, users, compact }: Props) {
       return <RatingCell column={column} value={value} item={item} compact={compact} />;
     case "progress":
       return <ProgressCell column={column} value={value} item={item} compact={compact} />;
-    case "file":
-      return <FileCell column={column} value={value} item={item} compact={compact} />;
-    case "time_tracking":
-      return <TimeTrackingCell column={column} value={value} item={item} compact={compact} />;
-    case "dependency":
-      return <DependencyCell column={column} value={value} item={item} compact={compact} />;
     case "ai_agent":
       return <AIAgentCell column={column} value={value} item={item} compact={compact} />;
     case "formula":
@@ -89,128 +76,6 @@ export function ColumnRenderer({ column, value, item, users, compact }: Props) {
     default:
       return <div className="text-xs text-muted-foreground px-2">—</div>;
   }
-}
-
-// ----------------------------------------------------------------------------
-// TagsCell — múltiples valores como chips (similar a TextCell pero con visual)
-// ----------------------------------------------------------------------------
-function TagsCell({ column, value, item, compact }: Props) {
-  const updateColumnValue = useAppStore((s) => s.updateColumnValue);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value?.value?.text ?? "");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
-
-  const commit = () => {
-    updateColumnValue(item.id, column.id, { text: draft });
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
-            setDraft(value?.value?.text ?? "");
-            setEditing(false);
-          }
-        }}
-        placeholder="tag1, tag2, tag3"
-        className="w-full h-7 px-2 text-xs bg-background border border-[#0072E5] rounded outline-none"
-      />
-    );
-  }
-
-  const tags = (value?.value?.text ?? "").split(",").map((t) => t.trim()).filter(Boolean);
-
-  return (
-    <div
-      onClick={() => setEditing(true)}
-      className="min-h-[28px] px-2 flex items-center gap-1 flex-wrap cursor-text hover:bg-secondary/40 rounded"
-    >
-      {tags.length === 0 ? (
-        <span className="text-xs text-muted-foreground italic">+ Add tags</span>
-      ) : (
-        tags.map((tag, i) => (
-          <span
-            key={i}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-[#0072E5]/10 text-[#0072E5] font-medium"
-          >
-            {tag}
-          </span>
-        ))
-      )}
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------------
-// FileCell — muestra icono de archivo + nombre
-// ----------------------------------------------------------------------------
-function FileCell({ value, compact }: Props) {
-  const fileName = value?.value?.text ?? value?.value?.fileName;
-  if (!fileName) {
-    return (
-      <div className="text-xs text-muted-foreground italic px-2">
-        {compact ? "—" : "Sin archivo"}
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1.5 px-2 text-xs">
-      <span className="text-[#0072E5]">📎</span>
-      <span className="truncate max-w-[120px]">{fileName}</span>
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------------
-// TimeTrackingCell — muestra tiempo acumulado (formato HH:MM:SS)
-// ----------------------------------------------------------------------------
-function TimeTrackingCell({ value, item, column }: Props) {
-  const updateColumnValue = useAppStore((s) => s.updateColumnValue);
-  const totalSeconds = value?.value?.seconds ?? 0;
-  const isRunning = value?.value?.running ?? false;
-
-  const formatTime = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
-  };
-
-  const toggle = () => {
-    const newSeconds = isRunning
-      ? totalSeconds
-      : totalSeconds;
-    updateColumnValue(item.id, column.id, {
-      seconds: newSeconds,
-      running: !isRunning,
-      startedAt: !isRunning ? new Date().toISOString() : undefined,
-    });
-  };
-
-  return (
-    <button
-      onClick={toggle}
-      className="flex items-center gap-1.5 px-2 text-xs hover:bg-secondary/40 rounded h-7"
-    >
-      <span className={isRunning ? "text-[#00C875]" : "text-muted-foreground"}>
-        {isRunning ? "⏸" : "▶"}
-      </span>
-      <span className={isRunning ? "font-mono font-semibold text-[#00C875]" : "font-mono text-muted-foreground"}>
-        {formatTime(totalSeconds)}
-      </span>
-    </button>
-  );
 }
 
 // ----------------------------------------------------------------------------
@@ -277,37 +142,47 @@ function TextCell({ column, value, item, compact }: Props) {
 // ----------------------------------------------------------------------------
 function StatusCell({ column, value, item, compact }: Props) {
   const updateColumnValue = useAppStore((s) => s.updateColumnValue);
+  const [open, setOpen] = useState(false); // FIX: controlar popover para cerrar al seleccionar
   const labels = column.labels ?? {};
   const selectedLabelId = value?.value?.labelId;
   const selected = selectedLabelId ? labels[selectedLabelId] : null;
 
+  // Determinar si el texto debe ser negro o blanco según la luminancia del color
+  // (Monday usa texto negro en amarillo claro, blanco en colores oscuros)
+  const getTextColor = (bgColor: string): string => {
+    // Colores claros donde el texto debe ser negro
+    const lightColors = ["#FFC700", "#FFCB00", "#9CD326", "#E2445C", "#FF642E", "#C4C4C4"];
+    if (lightColors.some((c) => c.toLowerCase() === bgColor.toLowerCase())) {
+      return "#323338"; // texto oscuro
+    }
+    return "#ffffff"; // texto blanco por defecto
+  };
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition min-h-[28px] hover:opacity-90",
-            compact && "py-0.5"
+            "w-full flex items-center gap-1.5 px-2 rounded text-[12px] font-medium transition min-h-[24px] hover:opacity-90",
+            compact && "min-h-[20px]",
+            !selected && "text-[#676879]/60 hover:bg-[rgba(103,104,121,0.1)]"
           )}
-          style={{
-            background: selected ? `${selected.color}20` : "transparent",
-            color: selected?.color ?? "#676879",
-          }}
+          style={
+            selected
+              ? {
+                  background: selected.color,
+                  color: getTextColor(selected.color),
+                }
+              : undefined
+          }
         >
-          {selected && (
-            <span
-              className="status-dot"
-              style={{ background: selected.color }}
-            />
-          )}
-          <span className={cn("flex-1 text-left truncate", !selected && "text-muted-foreground/60")}>
+          <span className={cn("flex-1 text-left truncate", !selected && "text-[#676879]/60")}>
             {selected?.name ?? "—"}
           </span>
-          <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-52 p-1" align="start">
-        <div className="text-[10px] font-semibold uppercase text-muted-foreground px-2 py-1.5 tracking-wider">
+        <div className="text-[10px] font-semibold uppercase text-[#676879] px-2 py-1.5 tracking-wider">
           {column.title}
         </div>
         {Object.entries(labels).map(([id, label]) => (
@@ -315,15 +190,16 @@ function StatusCell({ column, value, item, compact }: Props) {
             key={id}
             onClick={() => {
               updateColumnValue(item.id, column.id, { labelId: id });
+              setOpen(false); // FIX: cerrar popover al seleccionar
             }}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-secondary transition"
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[13px] hover:bg-[rgba(103,104,121,0.1)] transition-colors"
           >
             <span
               className="h-3.5 w-3.5 rounded-full shrink-0 border border-black/5"
               style={{ background: label.color }}
             />
-            <span className="flex-1 text-left">{label.name}</span>
-            {selectedLabelId === id && <Check className="h-3 w-3 text-[#0072E5]" />}
+            <span className="flex-1 text-left text-[#323338]">{label.name}</span>
+            {selectedLabelId === id && <Check className="h-3 w-3 text-[#0073EA]" />}
           </button>
         ))}
       </PopoverContent>
@@ -334,48 +210,54 @@ function StatusCell({ column, value, item, compact }: Props) {
 // ----------------------------------------------------------------------------
 function PeopleCell({ column, value, item, users, compact }: Props) {
   const updateColumnValue = useAppStore((s) => s.updateColumnValue);
+  const [open, setOpen] = useState(false); // FIX: controlar popover
   const selectedIds: string[] = value?.value?.userIds ?? [];
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "w-full flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary/60 transition min-h-[28px]",
-            compact && "py-0.5"
+            "w-full flex items-center gap-1 px-2 rounded hover:bg-[rgba(103,104,121,0.1)] transition min-h-[28px]",
+            compact && "min-h-[24px]"
           )}
         >
           {selectedIds.length === 0 ? (
-            <Plus className="h-3.5 w-3.5 text-muted-foreground/60" />
+            <Plus className="h-3.5 w-3.5 text-[#676879]/60" />
           ) : (
-            <div className="flex -space-x-1.5">
-              {selectedIds.slice(0, 3).map((id) => {
+            <div className="flex items-center">
+              {selectedIds.slice(0, 3).map((id, idx) => {
                 const u = users?.find((x) => x.id === id);
                 if (!u) return null;
                 return (
-                  <div key={id} className="relative">
-                    <Avatar
-                      className="h-6 w-6 border-2 border-card text-[9px] font-semibold"
+                  <Avatar
+                    key={id}
+                    className="text-[10px] font-semibold border-2 border-white rounded-full"
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                      marginLeft: idx === 0 ? 0 : "-8px",
+                      zIndex: 3 - idx,
+                    }}
+                  >
+                    <AvatarFallback
+                      style={{ background: u.color }}
+                      className="text-white rounded-full"
                     >
-                      <AvatarFallback
-                        style={{ background: u.color }}
-                        className="text-white"
-                      >
-                        {u.name
-                          .split(" ")
-                          .map((p) => p[0])
-                          .slice(0, 2)
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    {u.online && (
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#00C875] rounded-full border-2 border-card" />
-                    )}
-                  </div>
+                      {u.name
+                        .split(" ")
+                        .map((p) => p[0])
+                        .slice(0, 2)
+                        .join("")}
+                    </AvatarFallback>
+                  </Avatar>
                 );
               })}
               {selectedIds.length > 3 && (
-                <div className="h-6 w-6 rounded-full bg-secondary text-[9px] font-medium flex items-center justify-center border-2 border-card">
+                <div
+                  className="rounded-full bg-[#CCE5FF] border-2 border-white flex items-center justify-center text-[10px] font-semibold text-[#0073EA]"
+                  style={{ width: "28px", height: "28px", marginLeft: "-8px" }}
+                >
                   +{selectedIds.length - 3}
                 </div>
               )}
@@ -400,23 +282,18 @@ function PeopleCell({ column, value, item, users, compact }: Props) {
               }}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-secondary transition"
             >
-              <div className="relative">
-                <Avatar className="h-5 w-5">
-                  <AvatarFallback
-                    style={{ background: u.color }}
-                    className="text-white text-[9px] font-semibold"
-                  >
-                    {u.name
-                      .split(" ")
-                      .map((p) => p[0])
-                      .slice(0, 2)
-                      .join("")}
-                  </AvatarFallback>
-                </Avatar>
-                {u.online && (
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-[#00C875] rounded-full border-2 border-popover" />
-                )}
-              </div>
+              <Avatar className="h-5 w-5">
+                <AvatarFallback
+                  style={{ background: u.color }}
+                  className="text-white text-[9px] font-semibold"
+                >
+                  {u.name
+                    .split(" ")
+                    .map((p) => p[0])
+                    .slice(0, 2)
+                    .join("")}
+                </AvatarFallback>
+              </Avatar>
               <span className="flex-1 text-left truncate">{u.name}</span>
               {checked && <Check className="h-3 w-3 text-[#0072E5]" />}
             </button>
@@ -466,8 +343,13 @@ function DateCell({ column, value, item, compact }: Props) {
           selected={parsed}
           onSelect={(d) => {
             if (d) {
+              // FIX: usar año/mes/día local en vez de toISOString() que
+              // desplaza la fecha un día para atrás en timezones UTC+
+              const year = d.getFullYear();
+              const month = String(d.getMonth() + 1).padStart(2, "0");
+              const day = String(d.getDate()).padStart(2, "0");
               updateColumnValue(item.id, column.id, {
-                date: d.toISOString().slice(0, 10),
+                date: `${year}-${month}-${day}`,
               });
             }
             setOpen(false);
@@ -551,235 +433,6 @@ function ProgressCell({ column, value, item, compact }: Props) {
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// DependencyCell — muestra dependencias entre items con flechas visuales
-// ============================================================================
-function DependencyCell({ column, value, item, compact }: Props) {
-  const updateColumnValue = useAppStore((s) => s.updateColumnValue);
-  const boards = useAppStore((s) => s.boards);
-  const activeBoardId = useAppStore((s) => s.activeBoardId);
-  const selectItem = useAppStore((s) => s.selectItem);
-
-  const deps: { itemId: string; type: "depends_on" | "blocked_by" }[] =
-    value?.value?.dependencies ?? [];
-
-  const allItems = useMemo(
-    () => boards.flatMap((b) => b.items),
-    [boards]
-  );
-
-  const findItemName = (id: string) => {
-    const found = allItems.find((i) => i.id === id);
-    return found?.name ?? "(item no encontrado)";
-  };
-
-  const navigateToItem = (itemId: string) => {
-    // Find the board that contains this item and set it active
-    const containingBoard = boards.find((b) => b.items.some((i) => i.id === itemId));
-    if (containingBoard) {
-      useAppStore.getState().setActiveBoard(containingBoard.id);
-    }
-    selectItem(itemId);
-  };
-
-  if (deps.length === 0) {
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <button className="w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs text-muted-foreground/60 italic hover:bg-secondary/40 transition min-h-[28px]">
-            <ArrowRight className="h-3 w-3" />
-            {compact ? "—" : "Sin dependencias"}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-3" align="start">
-          <DependencyEditor
-            item={item}
-            column={column}
-            deps={deps}
-            allItems={allItems}
-            updateColumnValue={updateColumnValue}
-            onNavigate={navigateToItem}
-          />
-        </PopoverContent>
-      </Popover>
-    );
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button className="w-full flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-secondary/40 transition min-h-[28px] group">
-          <div className="flex flex-wrap gap-1 items-center">
-            {deps.slice(0, 3).map((dep, i) => (
-              <span
-                key={dep.itemId}
-                className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-[#A25BFF]/10 text-[#A25BFF] font-medium"
-                title={findItemName(dep.itemId)}
-              >
-                {dep.type === "blocked_by" ? (
-                  <ArrowLeft className="h-2.5 w-2.5" />
-                ) : (
-                  <ArrowRight className="h-2.5 w-2.5" />
-                )}
-                <span className="truncate max-w-[60px]">
-                  {findItemName(dep.itemId).split(" ")[0]}
-                </span>
-              </span>
-            ))}
-            {deps.length > 3 && (
-              <span className="text-[10px] text-muted-foreground">+{deps.length - 3}</span>
-            )}
-          </div>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-3" align="start">
-        <DependencyEditor
-          item={item}
-          column={column}
-          deps={deps}
-          allItems={allItems}
-          updateColumnValue={updateColumnValue}
-          onNavigate={navigateToItem}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ----------------------------------------------------------------------------
-// DependencyEditor — popover para añadir/remover dependencias
-// ----------------------------------------------------------------------------
-function DependencyEditor({
-  item,
-  column,
-  deps,
-  allItems,
-  updateColumnValue,
-  onNavigate,
-}: {
-  item: Item;
-  column: ColumnDef;
-  deps: { itemId: string; type: "depends_on" | "blocked_by" }[];
-  allItems: Item[];
-  updateColumnValue: (itemId: string, columnId: string, value: any) => void;
-  onNavigate: (itemId: string) => void;
-}) {
-  const [search, setSearch] = useState("");
-
-  // Excluir el item actual y items ya dependientes
-  const available = useMemo(() => {
-    const depIds = new Set(deps.map((d) => d.itemId));
-    return allItems
-      .filter((i) => i.id !== item.id && !depIds.has(i.id))
-      .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()))
-      .slice(0, 8);
-  }, [allItems, item.id, deps, search]);
-
-  const addDependency = (targetId: string, type: "depends_on" | "blocked_by") => {
-    updateColumnValue(item.id, column.id, {
-      dependencies: [...deps, { itemId: targetId, type }],
-    });
-  };
-
-  const removeDependency = (targetId: string) => {
-    updateColumnValue(item.id, column.id, {
-      dependencies: deps.filter((d) => d.itemId !== targetId),
-    });
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-        Dependencias
-      </div>
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Buscar item…"
-        className="h-7 text-xs"
-      />
-
-      {/* Dependencias actuales */}
-      {deps.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Actuales
-          </div>
-          {deps.map((dep) => (
-            <div
-              key={dep.itemId}
-              className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-secondary/40 text-xs group"
-            >
-              <span className="text-[#A25BFF] shrink-0">
-                {dep.type === "blocked_by" ? "←" : "→"}
-              </span>
-              <span className="flex-1 truncate">{findItemNameFromList(allItems, dep.itemId)}</span>
-              <span className="text-[9px] text-muted-foreground capitalize">
-                {dep.type === "blocked_by" ? "bloqueado por" : "depende de"}
-              </span>
-              <button
-                onClick={() => removeDependency(dep.itemId)}
-                className="w-5 h-5 flex items-center justify-center rounded text-[#E2445C] opacity-0 group-hover:opacity-100 hover:bg-[#E2445C]/10"
-              >
-                <Plus className="h-2.5 w-2.5 rotate-45" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Items disponibles para agregar */}
-      {available.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Agregar dependencia
-          </div>
-          {available.map((i) => (
-            <div key={i.id} className="flex items-center gap-1 py-1">
-              <span className="flex-1 text-xs truncate">{i.name}</span>
-              <button
-                onClick={() => addDependency(i.id, "depends_on")}
-                className="text-[9px] px-1.5 py-0.5 rounded bg-[#A25BFF]/10 text-[#A25BFF] hover:bg-[#A25BFF]/20 transition"
-                title="Este item depende de éste"
-              >
-                ← Depende
-              </button>
-              <button
-                onClick={() => addDependency(i.id, "blocked_by")}
-                className="text-[9px] px-1.5 py-0.5 rounded bg-[#5559DF]/10 text-[#5559DF] hover:bg-[#5559DF]/20 transition"
-                title="Este item bloquea a éste"
-              >
-                Bloquea →
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {deps.length > 0 && (
-        <div className="pt-2 border-t border-border">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full h-7 text-xs"
-            onClick={() => {
-              if (deps.length > 0) {
-                onNavigate(deps[0].itemId);
-              }
-            }}
-          >
-            Navegar a item dependiente
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function findItemNameFromList(items: Item[], id: string): string {
-  return items.find((i) => i.id === id)?.name ?? "(no encontrado)";
 }
 
 // ----------------------------------------------------------------------------

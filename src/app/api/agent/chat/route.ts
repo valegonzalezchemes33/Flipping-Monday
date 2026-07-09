@@ -14,7 +14,6 @@ export const dynamic = "force-dynamic";
 interface ChatRequest {
   messages: GroqMessage[];
   groqApiKey?: string;
-  model?: string; // modelo a usar; si no se especifica, se elige automaticamente
   context?: {
     userName?: string;
     activeBoardName?: string;
@@ -26,6 +25,9 @@ interface ChatRequest {
     selectedItemFiles?: any[];
     selectedItemColumnValues?: any[];
   };
+  // Las tools las pasamos pre-ejecutadas desde el cliente (que tiene acceso al store)
+  // El servidor no tiene acceso al store, así que el cliente ejecuta las tools
+  // y re-envía los resultados en messages con role: "tool"
 }
 
 export async function POST(req: NextRequest) {
@@ -39,10 +41,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { messages, groqApiKey, context, model: requestedModel } = body;
-
-  // NVIDIA NIM es el único provider. Siempre usar Llama 3.3 70B por defecto.
-  const modelToUse = requestedModel || "meta/llama-3.3-70b-instruct";
+  const { messages, groqApiKey, context } = body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response(JSON.stringify({ error: "messages[] requerido" }), {
@@ -54,23 +53,15 @@ export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      // FIX: escuchar req.signal para cerrar el stream si el cliente se
-      // desconecta. Sin esto, las conexiones SSE quedaban zombie consumiendo
-      // memoria y event loop.
-      const abortListener = () => {
-        try { controller.close(); } catch { /* ya cerrado */ }
-      };
+      // FIX: escuchar abort del cliente para cerrar stream y evitar zombies
+      const abortListener = () => { try { controller.close(); } catch {} };
       req.signal.addEventListener("abort", abortListener);
-
       const send = (event: string, data: any) => {
-        // Si el controller ya está cerrado, no intentar escribir
         try {
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
-        } catch {
-          /* controller cerrado — ignorar */
-        }
+        } catch { /* controller cerrado */ }
       };
 
       // Construir system prompt con contexto
@@ -102,7 +93,6 @@ export async function POST(req: NextRequest) {
             tools: SIDEKICK_TOOLS as GroqTool[],
             temperature: 0.4,
             maxTokens: 2000,
-            model: modelToUse,
             groqApiKey,
           },
           { apiKey: groqApiKey }
@@ -149,9 +139,8 @@ export async function POST(req: NextRequest) {
           message: err?.message ?? "Error en el chat",
         });
       } finally {
-        // Limpiar listener del abort signal para evitar memory leak
         req.signal.removeEventListener("abort", abortListener);
-        try { controller.close(); } catch { /* ya cerrado */ }
+        try { controller.close(); } catch {}
       }
     },
   });

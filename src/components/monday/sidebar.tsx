@@ -2,7 +2,7 @@
 // ============================================================================
 // Sidebar Monday — Workspaces → Boards → Dashboards → Docs → Automations → Agentes
 // ============================================================================
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -22,16 +22,28 @@ import {
   Download,
   Star,
   Clock,
-  User as UserIcon,
-  PanelLeftClose,
-  PanelLeft,
-  Activity,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,29 +54,8 @@ import {
 
 export function Sidebar() {
   const workspaces = useAppStore((s) => s.workspaces);
-  // OPTIMIZACIÓN: subscribirse al array de boards (referencia estable de
-  // zustand — solo cambia cuando se añade/elimina un board, no en cada
-  // mutación de items). Luego derivamos metadata con useMemo, que solo
-  // recalcula cuando `boards` cambia de referencia.
-  // IMPORTANTE: NO usar selectores que devuelvan arrays/objetos nuevos
-  // (.map, .filter, { ... }) directamente en useAppStore — causan infinite
-  // loop con useSyncExternalStore. Siempre subscribirse a la referencia
-  // original y derivar con useMemo.
-  const rawBoards = useAppStore((s) => s.boards);
-  const boards = useMemo(
-    () =>
-      rawBoards
-        .filter((b) => !b.archived)
-        .map((b) => ({
-          id: b.id,
-          name: b.name,
-          workspaceId: b.workspaceId,
-          description: b.description,
-          itemsCount: b.items.length,
-          boardKind: b.boardKind,
-        })),
-    [rawBoards]
-  );
+  // FIX: filtrar boards archivados del sidebar
+  const boards = useAppStore((s) => s.boards.filter((b) => !b.archived));
   const agents = useAppStore((s) => s.agents);
   const automations = useAppStore((s) => s.automations);
   const activeBoardId = useAppStore((s) => s.activeBoardId);
@@ -77,14 +68,13 @@ export function Sidebar() {
   const setSidebarView = useAppStore((s) => s.setSidebarView);
   const users = useAppStore((s) => s.users);
   const currentUser = useAppStore((s) => s.currentUserId);
-  
+  const addBoard = useAppStore((s) => s.addBoard);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const setShowMondayConnect = useAppStore((s) => s.setShowMondayConnect);
   const setShowMondayImport = useAppStore((s) => s.setShowMondayImport);
   const mondayConnected = useAppStore((s) => s.mondayConnected);
   const mondayAccount = useAppStore((s) => s.mondayAccount);
   const deleteBoard = useAppStore((s) => s.deleteBoard);
-  const duplicateBoard = useAppStore((s) => s.duplicateBoard);
   const favoriteBoardIds = useAppStore((s) => s.favoriteBoardIds);
   const recentBoardIds = useAppStore((s) => s.recentBoardIds);
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
@@ -92,12 +82,19 @@ export function Sidebar() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(
     Object.fromEntries(workspaces.map((w) => [w.id, true]))
   );
+  const [showAddBoard, setShowAddBoard] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [newBoardName, setNewBoardName] = useState("");
+  const [newBoardWs, setNewBoardWs] = useState("");
 
   const me = users.find((u) => u.id === currentUser);
 
-  const handleOpenAddBoard = (wsId: string) => {
-    useAppStore.getState().setShowAddBoard(true);
+  const handleAddBoard = () => {
+    if (!newBoardName.trim() || !newBoardWs) return;
+    addBoard(newBoardWs, newBoardName.trim());
+    setExpanded((e) => ({ ...e, [newBoardWs]: true }));
+    setNewBoardName("");
+    setShowAddBoard(null);
   };
 
   const handleNav = (view: typeof sidebarView) => {
@@ -105,44 +102,28 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={cn("relative flex flex-col h-screen bg-sidebar border-r border-sidebar-border shrink-0 transition-all duration-300", collapsed ? "w-[56px]" : "w-[256px]")}>
-      {/* Collapse toggle button */}
+    <aside className="flex flex-col w-[260px] h-screen bg-white border-r border-[#D0D4E4] shrink-0">
+      {/* Workspace header — más limpio */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-1/2 z-50 w-6 h-6 rounded-full bg-sidebar border border-sidebar-border shadow-sm flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition"
-        title={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-      >
-        {collapsed ? <PanelLeft className="h-3 w-3" /> : <PanelLeftClose className="h-3 w-3" />}
-      </button>
-
-      {/* Workspace header — click para crear nuevo workspace */}
-      <button
-        className={cn("px-3 py-3 border-b border-sidebar-border flex items-center gap-2.5 hover:bg-sidebar-accent/40 transition group", collapsed && "justify-center px-0")}
-        title={collapsed ? workspaces[0]?.name ?? "Acme Workspace" : "Click para crear nuevo workspace"}
-        onClick={() => {
-          if (collapsed) { setCollapsed(false); return; }
-          const name = window.prompt("Nombre del nuevo workspace:");
-          if (name && name.trim()) {
-            addWorkspace(name.trim());
-          }
-        }}
+        className="px-3 py-3 border-b border-sidebar-border flex items-center gap-2.5 hover:bg-sidebar-accent/40 transition group"
+        title="Click para crear nuevo workspace"
       >
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0072E5] to-[#0058B5] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
           A
         </div>
         <div className="flex-1 min-w-0 text-left">
           <div className="text-sm font-semibold text-foreground truncate leading-tight">
-            {workspaces[0]?.name ?? "Acme Workspace"}
+            Acme Workspace
           </div>
           <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00C875]" />
-            {workspaces.length} workspace{workspaces.length !== 1 ? "s" : ""} · {boards.length} boards
+            Plan Pro · 5 seats
           </div>
         </div>
         <ChevronDown className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
       </button>
 
-      {!collapsed && (
+      {/* Search / Cmd+K */}
       <div className="px-3 py-2.5 border-b border-sidebar-border">
         <button
           onClick={() => setCommandPaletteOpen(true)}
@@ -155,71 +136,49 @@ export function Sidebar() {
           </kbd>
         </button>
       </div>
-      )}
 
-      {/* Quick nav */}
-      <nav className={cn("px-2 py-2 border-b border-sidebar-border space-y-0.5", collapsed && "px-1")}>
+      {/* Quick nav — más compacto y alineado */}
+      <nav className="px-2 py-2 border-b border-sidebar-border space-y-0.5">
         <SidebarNavItem
           icon={<Home className="h-4 w-4" />}
           label="Inicio"
           active={sidebarView === "home"}
-          collapsed={collapsed}
           onClick={() => handleNav("home")}
-        />
-        <SidebarNavItem
-          icon={<UserIcon className="h-4 w-4" />}
-          label="Mi Trabajo"
-          active={sidebarView === "my_work"}
-          collapsed={collapsed}
-          onClick={() => handleNav("my_work")}
         />
         <SidebarNavItem
           icon={<Bot className="h-4 w-4" />}
           label="Agentes IA"
           badge={agents.length}
-          collapsed={collapsed}
           onClick={() => setShowAgentBuilder(true)}
         />
         <SidebarNavItem
           icon={<Sparkles className="h-4 w-4" />}
           label="Orquestador"
-          collapsed={collapsed}
           onClick={() => setShowOrchestrator(true)}
         />
         <SidebarNavItem
           icon={<Zap className="h-4 w-4" />}
           label="Automatizaciones"
           badge={automations.length}
-          collapsed={collapsed}
           onClick={() => setShowAutomations(true)}
         />
         <SidebarNavItem
           icon={<BarChart3 className="h-4 w-4" />}
           label="Dashboards"
           active={sidebarView === "dashboards"}
-          collapsed={collapsed}
           onClick={() => handleNav("dashboards")}
         />
         <SidebarNavItem
           icon={<FileText className="h-4 w-4" />}
           label="Docs"
           active={sidebarView === "docs"}
-          collapsed={collapsed}
           onClick={() => handleNav("docs")}
-        />
-        <SidebarNavItem
-          icon={<Activity className="h-4 w-4" />}
-          label="Actividad"
-          active={sidebarView === "activity"}
-          collapsed={collapsed}
-          onClick={() => handleNav("activity")}
         />
         <SidebarNavItem
           icon={<Users className="h-4 w-4" />}
           label="Equipo"
           badge={users.length}
           active={sidebarView === "team"}
-          collapsed={collapsed}
           onClick={() => handleNav("team")}
         />
       </nav>
@@ -306,7 +265,7 @@ export function Sidebar() {
         </div>
       )}
 
-      {!collapsed && (
+      {/* Integraciones — Monday.com connect */}
       <div className="px-2 py-2 border-b border-sidebar-border">
         <div className="text-[10px] uppercase font-bold text-muted-foreground/70 px-2 py-1 tracking-wider">
           Integraciones
@@ -352,9 +311,8 @@ export function Sidebar() {
           </button>
         )}
       </div>
-      )}
 
-      {!collapsed && (
+      {/* Workspaces + boards — scroll area */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {workspaces.map((ws) => {
           const wsBoards = boards.filter((b) => b.workspaceId === ws.id);
@@ -379,7 +337,10 @@ export function Sidebar() {
                   </span>
                 </button>
                 <button
-                  onClick={() => handleOpenAddBoard(ws.id)}
+                  onClick={() => {
+                    setNewBoardWs(ws.id);
+                    setShowAddBoard(ws.id);
+                  }}
                   className="p-1 rounded hover:bg-sidebar-accent text-muted-foreground opacity-0 group-hover:opacity-100 transition shrink-0"
                   title="Añadir board"
                 >
@@ -390,7 +351,10 @@ export function Sidebar() {
                 <div className="ml-3 mt-0.5 space-y-0.5 border-l border-sidebar-border pl-1.5">
                   {wsBoards.length === 0 && (
                     <button
-                      onClick={() => handleOpenAddBoard(ws.id)}
+                      onClick={() => {
+                        setNewBoardWs(ws.id);
+                        setShowAddBoard(ws.id);
+                      }}
                       className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground hover:text-[#0072E5] rounded-md hover:bg-sidebar-accent/40 transition"
                     >
                       <Plus className="h-3 w-3" />
@@ -443,15 +407,9 @@ export function Sidebar() {
                         <DropdownMenuContent align="end" className="w-40">
                           <DropdownMenuItem
                             onClick={() => {
-                              // FIX: antes abría el modal de crear board con nombre "(copia)".
-                              // Ahora usa duplicateBoard del store que copia todo: items, grupos, columnas.
-                              const newId = duplicateBoard(b.id);
-                              if (newId) {
-                                setActiveBoard(newId);
-                                toast.success("Board duplicado", {
-                                  description: `${b.name} (copia)`,
-                                });
-                              }
+                              setNewBoardWs(ws.id);
+                              setNewBoardName(`${b.name} (copia)`);
+                              setShowAddBoard(ws.id);
                             }}
                           >
                             Duplicar
@@ -477,7 +435,7 @@ export function Sidebar() {
           );
         })}
 
-        {/* Add workspace */}
+        {/* Add workspace — al final, sutil */}
         <button
           onClick={() => addWorkspace("New Workspace")}
           className="w-full flex items-center gap-1.5 px-2 py-1.5 mt-2 text-[11px] text-muted-foreground hover:text-[#0072E5] rounded-md hover:bg-sidebar-accent/40 transition"
@@ -486,42 +444,92 @@ export function Sidebar() {
           Nuevo workspace
         </button>
       </div>
-      )}
 
-      {/* User */}
-      <div className={cn("border-t border-sidebar-border p-2 flex items-center gap-2.5 hover:bg-sidebar-accent/30 rounded-none transition cursor-pointer", collapsed && "justify-center")}>
-        <div className="relative shrink-0">
-          <Avatar className="h-8 w-8 ring-2 ring-background">
-            <AvatarFallback
-              className="text-white text-xs font-semibold"
-              style={{ background: me?.color }}
-            >
-              {me?.name
-                .split(" ")
-                .map((p) => p[0])
-                .slice(0, 2)
-                .join("")}
-            </AvatarFallback>
-          </Avatar>
-          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#00C875] rounded-full border-2 border-sidebar" />
-        </div>
-        {!collapsed && (
+      {/* User — más limpio */}
+      <div className="border-t border-sidebar-border p-2 flex items-center gap-2.5 hover:bg-sidebar-accent/30 rounded-none transition cursor-pointer">
+        <Avatar className="h-8 w-8 ring-2 ring-background">
+          <AvatarFallback
+            className="text-white text-xs font-semibold"
+            style={{ background: me?.color }}
+          >
+            {me?.name
+              .split(" ")
+              .map((p) => p[0])
+              .slice(0, 2)
+              .join("")}
+          </AvatarFallback>
+        </Avatar>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium truncate">{me?.name}</div>
           <div className="text-[10px] text-muted-foreground truncate">{me?.email}</div>
         </div>
-        )}
         <Button
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-          title="Abrir configuración"
-          onClick={() => useAppStore.getState().setShowSettings(true)}
+          title="Settings"
         >
           <Settings className="h-3.5 w-3.5" />
         </Button>
       </div>
 
+      {/* Add Board modal */}
+      <Dialog open={!!showAddBoard} onOpenChange={(o) => !o && setShowAddBoard(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4 text-[#0072E5]" />
+              Crear board
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Plantilla básica (name, status, people, date) con grupo inicial.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Nombre del board *</Label>
+              <Input
+                value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                placeholder="Ej: Pipeline Q4"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleAddBoard()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Workspace</Label>
+              <Select value={newBoardWs} onValueChange={setNewBoardWs}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Selecciona workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((w) => (
+                    <SelectItem key={w.id} value={w.id} className="text-sm">
+                      <span className="flex items-center gap-2">
+                        <Folder className="h-3 w-3" style={{ color: w.color }} />
+                        {w.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setShowAddBoard(null)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="bg-[#0072E5] hover:bg-[#0058B5] text-white"
+              onClick={handleAddBoard}
+              disabled={!newBoardName.trim() || !newBoardWs}
+            >
+              Crear board
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 }
@@ -532,39 +540,34 @@ function SidebarNavItem({
   badge,
   onClick,
   active,
-  collapsed,
 }: {
   icon: React.ReactNode;
   label: string;
   badge?: number;
   onClick?: () => void;
   active?: boolean;
-  collapsed?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm transition",
-        collapsed ? "justify-center px-0" : "",
+        "w-full flex items-center gap-2.5 px-3 py-[9px] rounded text-[14px] transition-colors duration-100 group",
         active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-          : "text-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+          ? "bg-[#CCE5FF] text-[#0073EA] font-semibold"
+          : "text-[#323338] hover:bg-[rgba(103,104,121,0.1)]"
       )}
     >
-      <span className={cn("shrink-0", active ? "text-[#0072E5]" : "text-muted-foreground")}>
+      <span className={cn("shrink-0 transition-colors", active ? "text-[#0073EA]" : "text-[#676879] group-hover:text-[#323338]")}>
         {icon}
       </span>
-      {!collapsed && (
-        <span className="flex-1 text-left">{label}</span>
-      )}
-      {!collapsed && badge !== undefined && badge > 0 && (
+      <span className="flex-1 text-left leading-tight">{label}</span>
+      {badge !== undefined && badge > 0 && (
         <span
           className={cn(
-            "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+            "text-[11px] font-semibold px-1.5 py-0.5 rounded min-w-[20px] text-center",
             active
-              ? "bg-[#0072E5]/15 text-[#0072E5]"
-              : "bg-secondary text-muted-foreground"
+              ? "bg-[#0073EA] text-white"
+              : "bg-[#F0F1F5] text-[#676879]"
           )}
         >
           {badge}

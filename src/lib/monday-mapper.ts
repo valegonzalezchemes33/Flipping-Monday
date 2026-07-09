@@ -190,9 +190,12 @@ function parseColumnValue(cv: MondayColumnValue, type: ColumnType): any {
 
     switch (type) {
       case "status":
-      case "priority":
-        // { "index": 1 } o { "labelId": "1" }
+        // Monday usa index 0-N, nosotros también
         return { labelId: String(parsed.index ?? parsed.labelId ?? "0") };
+      case "priority":
+        // FIX: Monday usa priority 1-4, nosotros usamos 0-3 → restar 1
+        const pIdx = parsed.index ?? parsed.labelId ?? 1;
+        return { labelId: String(Math.max(0, Number(pIdx) - 1)) };
 
       case "people":
         // { "personsAndTeams": [{ "id": 123, "kind": "person" }] }

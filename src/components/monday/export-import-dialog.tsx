@@ -17,28 +17,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Download, Upload, FileJson, CheckCircle2, AlertTriangle } from "lucide-react";
-import { z } from "zod";
-
-// Schema Zod para validación — fuera del componente para no recrearse
-const mondayExportSchema = z.object({
-  version: z.literal("2.0"),
-  exportedAt: z.string(),
-  workspace: z.object({ id: z.string(), name: z.string(), kind: z.enum(["open", "closed"]) }),
-  boards: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().optional(),
-    boardKind: z.enum(["public", "private", "shareable"]).optional(),
-    boardType: z.enum(["board", "dashboard"]).optional(),
-    columns: z.array(z.any()).optional(),
-    groups: z.array(z.any()).optional(),
-    items: z.array(z.any()).optional(),
-    views: z.array(z.any()).optional(),
-    automations: z.array(z.any()).optional(),
-  })),
-  users: z.array(z.object({ id: z.string(), name: z.string(), email: z.string() })),
-  teams: z.array(z.object({ id: z.string(), name: z.string(), memberIds: z.array(z.string()) })),
-});
 
 export function ExportImportDialog({
   open,
@@ -52,6 +30,7 @@ export function ExportImportDialog({
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const automations = useAppStore((s) => s.automations);
+  const addItem = useAppStore((s) => s.addItem);
   const [exportJson, setExportJson] = useState("");
   const [importJson, setImportJson] = useState("");
   const [importStatus, setImportStatus] = useState<
@@ -177,36 +156,19 @@ export function ExportImportDialog({
         msg: `✓ Dry-run OK · listo para importar`,
       });
 
-      // Validar con Zod (schema externo) antes de importar
-      const validated = mondayExportSchema.safeParse(parsed);
-      if (!validated.success) {
-        const firstIssue = validated.error.issues[0];
-        results.push({
-          type: "error",
-          msg: `Validación fallida: ${firstIssue?.path?.join(".") ?? ""} — ${firstIssue?.message ?? "Estructura JSON inválida"}`,
+      // Real import: agregar items del primer board al board local activo
+      // (simplificado — en prod sería upsert completo con mapeo interactivo)
+      const activeBoardId = useAppStore.getState().activeBoardId;
+      const activeBoard = boards.find((b) => b.id === activeBoardId);
+      if (activeBoard && parsed.boards[0]) {
+        const firstGroup = activeBoard.groups[0];
+        parsed.boards[0].items.slice(0, 5).forEach((it) => {
+          addItem(activeBoardId, firstGroup.id, `${it.name} (importado)`);
         });
-        setImportStatus(results);
-        return;
-      }
-
-      // Real import: usar mergeImportedData del store para upsert completo
-      const { mergeImportedData } = useAppStore.getState();
-      mergeImportedData({
-        users: validated.data.users,
-        teams: validated.data.teams,
-        workspaces: [validated.data.workspace],
-        boards: validated.data.boards as any,
-      });
-
-      const totalItems = parsed.boards.reduce((acc, b) => acc + b.items.length, 0);
-      results.push({
-        type: "ok",
-        msg: `✓ Importados ${parsed.boards.length} boards, ${parsed.users.length} users, ${totalItems} items`,
-      });
-
-      // Si hay un board en los datos importados, activarlo para que el usuario lo vea
-      if (parsed.boards[0]) {
-        useAppStore.getState().setActiveBoard(parsed.boards[0].id);
+        results.push({
+          type: "ok",
+          msg: `Importados ${Math.min(5, parsed.boards[0].items.length)} items al board activo (demo)`,
+        });
       }
 
       setImportStatus(results);
@@ -218,9 +180,9 @@ export function ExportImportDialog({
   };
 
   const loadSample = () => {
-    setImportJson(
-      JSON.stringify(buildExport(), null, 2).slice(0, 2000) + '\n  // ... (truncado para demo)'
-    );
+    // FIX: antes generaba JSON truncado + comentario → JSON inválido.
+    // Ahora genera JSON válido completo.
+    setImportJson(JSON.stringify(buildExport(), null, 2));
   };
 
   return (

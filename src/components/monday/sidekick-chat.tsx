@@ -1,11 +1,11 @@
-﻿"use client";
+"use client";
 // ============================================================================
-// SidekickChat â€” asistente IA lateral estilo monday sidekick
+// SidekickChat — asistente IA lateral estilo monday sidekick
 // ============================================================================
 // Chat en lenguaje natural con tool calling. El usuario escribe lo que quiere
 // hacer, el LLM (Groq con fallback a Z.ai) interpreta y ejecuta tools contra
 // el store.
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "@/lib/store";
 import type { SidekickMessage } from "@/lib/store";
 import { executeTool, type ToolExecutionContext } from "@/lib/sidekick-tools";
@@ -41,53 +41,47 @@ import {
   X,
   Lightbulb,
   Paperclip,
+  FileText,
+  Image as ImageIcon,
+  FileSpreadsheet,
+  File,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-
-// Array vacÃ­o estable â€” usado como fallback en selectores para evitar
-// crear nuevas referencias en cada render y causar re-renders innecesarios.
-const EMPTY_ARRAY: any[] = [];
-
-// Contador atomico para IDs de mensajes â€” evita duplicados cuando
-// React Strict Mode ejecuta efectos dos veces en el mismo milisegundo.
-let _msgCounter = 0;
-const nextMsgId = (prefix = "msg") => `${prefix}-${Date.now()}-${++_msgCounter}`;
-
 
 // Skills predefinidas (estilo monday AI blocks) + quick actions
 const SIDECRICK_SKILLS = [
   // ---- AI Skills (como Monday AI blocks) ----
   {
     category: "AI Skills",
-    icon: "ðŸ“",
+    icon: "📝",
     text: "Resumir updates",
     prompt: "Resume los updates del item seleccionado en 3 puntos clave",
     skill: "summarize",
   },
   {
     category: "AI Skills",
-    icon: "âœ¨",
+    icon: "✨",
     text: "Mejorar texto",
-    prompt: "Toma el Ãºltimo update del item seleccionado y mejÃ³ralo: mÃ¡s claro, profesional y conciso",
+    prompt: "Toma el último update del item seleccionado y mejóralo: más claro, profesional y conciso",
     skill: "improve",
   },
   {
     category: "AI Skills",
-    icon: "ðŸ”",
-    text: "Extraer informaciÃ³n",
-    prompt: "Extrae la informaciÃ³n clave del item seleccionado: fechas, montos, personas, estados",
+    icon: "🔍",
+    text: "Extraer información",
+    prompt: "Extrae la información clave del item seleccionado: fechas, montos, personas, estados",
     skill: "extract",
   },
   {
     category: "AI Skills",
-    icon: "ðŸŒ",
+    icon: "🌐",
     text: "Traducir",
-    prompt: "Traduce al inglÃ©s el contenido del item seleccionado",
+    prompt: "Traduce al inglés el contenido del item seleccionado",
     skill: "translate",
   },
   {
     category: "AI Skills",
-    icon: "ðŸ˜Š",
+    icon: "😊",
     text: "Detectar sentimiento",
     prompt: "Analiza el sentimiento de los updates del item seleccionado (positivo, negativo, neutral)",
     skill: "sentiment",
@@ -95,30 +89,30 @@ const SIDECRICK_SKILLS = [
   // ---- Quick Actions (operaciones de board) ----
   {
     category: "Acciones",
-    icon: "ðŸ“Š",
+    icon: "📊",
     text: "Resumir board",
     prompt: "Hazme un resumen completo del board actual",
     skill: null,
   },
   {
     category: "Acciones",
-    icon: "âš ï¸",
+    icon: "⚠️",
     text: "Items en riesgo",
-    prompt: "MuÃ©strame los items en riesgo",
+    prompt: "Muéstrame los items en riesgo",
     skill: null,
   },
   {
     category: "Acciones",
-    icon: "âž•",
+    icon: "➕",
     text: "Crear items",
     prompt: "Crea 3 items de ejemplo en el board actual",
     skill: null,
   },
   {
     category: "Acciones",
-    icon: "ðŸ“‹",
+    icon: "📋",
     text: "Listar boards",
-    prompt: "Â¿QuÃ© boards tengo?",
+    prompt: "¿Qué boards tengo?",
     skill: null,
   },
 ];
@@ -132,119 +126,80 @@ export function SidekickChat() {
   const clearMessages = useAppStore((s) => s.clearSidekickMessages);
   const thinking = useAppStore((s) => s.sidekickThinking);
   const setThinking = useAppStore((s) => s.setSidekickThinking);
-  // NVIDIA NIM es el único provider de IA. La API key se lee de settings o usa la hardcodeada.
-  const nvidiaApiKey = useAppStore((s) => s.settings?.nvidiaApiKey || "");
+  const groqApiKey = useAppStore((s) => s.sidekickGroqApiKey);
+  const setGroqApiKey = useAppStore((s) => s.setSidekickGroqApiKey);
 
-  // Store actions que el agente puede invocar.
-  // IMPORTANTE: useMemo para que el objeto sea estable entre renders â€” sin esto,
-  // cada render crea un objeto nuevo que invalida todos los useCallback que
-  // dependen de storeActions (executeToolCall, sendToLLM) causando re-renders
-  // en cascada. Las acciones individuales de zustand son referencias estables.
-  const addItem = useAppStore((s) => s.addItem);
-  const updateItemName = useAppStore((s) => s.updateItemName);
-  const updateColumnValue = useAppStore((s) => s.updateColumnValue);
-  const deleteItem = useAppStore((s) => s.deleteItem);
-  const moveItem = useAppStore((s) => s.moveItem);
-  const addGroup = useAppStore((s) => s.addGroup);
-  const setActiveBoard = useAppStore((s) => s.setActiveBoard);
-  const selectItem = useAppStore((s) => s.selectItem);
-  const setSidebarView = useAppStore((s) => s.setSidebarView);
-  const addUpdate = useAppStore((s) => s.addUpdate);
-  const pushNotification = useAppStore((s) => s.pushNotification);
-  const addFile = useAppStore((s) => s.addFile);
-  const deleteFile = useAppStore((s) => s.deleteFile);
-  const addSubitem = useAppStore((s) => s.addSubitem);
-  const deleteSubitem = useAppStore((s) => s.deleteSubitem);
-  const renameGroup = useAppStore((s) => s.renameGroup);
-  const deleteGroup = useAppStore((s) => s.deleteGroup);
-  const duplicateGroup = useAppStore((s) => s.duplicateGroup);
-  const duplicateItem = useAppStore((s) => s.duplicateItem);
-  const archiveItem = useAppStore((s) => s.archiveItem);
-  const addColumn = useAppStore((s) => s.addColumn);
-  const deleteColumn = useAppStore((s) => s.deleteColumn);
-  const addBoard = useAppStore((s) => s.addBoard);
-  const renameBoard = useAppStore((s) => s.renameBoard);
-  const duplicateBoard = useAppStore((s) => s.duplicateBoard);
-  const archiveBoard = useAppStore((s) => s.archiveBoard);
-  const deleteBoard = useAppStore((s) => s.deleteBoard);
-  const addWorkspace = useAppStore((s) => s.addWorkspace);
-  const renameWorkspace = useAppStore((s) => s.renameWorkspace);
-  const deleteWorkspace = useAppStore((s) => s.deleteWorkspace);
-
-  const storeActions = useMemo(
-    () => ({
-      addItem, updateItemName, updateColumnValue, deleteItem, moveItem,
-      addGroup, setActiveBoard, selectItem, setSidebarView, addUpdate,
-      pushNotification, addFile, deleteFile, addSubitem, deleteSubitem,
-      renameGroup, deleteGroup, duplicateGroup, duplicateItem, archiveItem,
-      addColumn, deleteColumn, addBoard, renameBoard, duplicateBoard,
-      archiveBoard, deleteBoard, addWorkspace, renameWorkspace, deleteWorkspace,
-    }),
-    [
-      addItem, updateItemName, updateColumnValue, deleteItem, moveItem,
-      addGroup, setActiveBoard, selectItem, setSidebarView, addUpdate,
-      pushNotification, addFile, deleteFile, addSubitem, deleteSubitem,
-      renameGroup, deleteGroup, duplicateGroup, duplicateItem, archiveItem,
-      addColumn, deleteColumn, addBoard, renameBoard, duplicateBoard,
-      archiveBoard, deleteBoard, addWorkspace, renameWorkspace, deleteWorkspace,
-    ]
-  );
+  // Store actions que el agente puede invocar — FIX: incluir TODAS las acciones
+  // que las tools necesitan (antes faltaban 13 → TypeError en runtime)
+  const storeActions = {
+    addItem: useAppStore((s) => s.addItem),
+    updateItemName: useAppStore((s) => s.updateItemName),
+    updateColumnValue: useAppStore((s) => s.updateColumnValue),
+    deleteItem: useAppStore((s) => s.deleteItem),
+    moveItem: useAppStore((s) => s.moveItem),
+    addGroup: useAppStore((s) => s.addGroup),
+    setActiveBoard: useAppStore((s) => s.setActiveBoard),
+    selectItem: useAppStore((s) => s.selectItem),
+    setSidebarView: useAppStore((s) => s.setSidebarView),
+    addUpdate: useAppStore((s) => s.addUpdate),
+    pushNotification: useAppStore((s) => s.pushNotification),
+    // FIX: acciones que faltaban y causaban TypeError
+    addFile: useAppStore((s) => s.addFile),
+    deleteFile: useAppStore((s) => s.deleteFile),
+    addSubitem: useAppStore((s) => s.addSubitem),
+    deleteSubitem: useAppStore((s) => s.deleteSubitem),
+    renameGroup: useAppStore((s) => s.renameGroup),
+    deleteGroup: useAppStore((s) => s.deleteGroup),
+    duplicateGroup: useAppStore((s) => s.duplicateGroup),
+    duplicateItem: useAppStore((s) => s.duplicateItem),
+    archiveItem: useAppStore((s) => s.archiveItem),
+    addColumn: useAppStore((s) => s.addColumn),
+    deleteColumn: useAppStore((s) => s.deleteColumn),
+    addBoard: useAppStore((s) => s.addBoard),
+    renameBoard: useAppStore((s) => s.renameBoard),
+    duplicateBoard: useAppStore((s) => s.duplicateBoard),
+    archiveBoard: useAppStore((s) => s.archiveBoard),
+    deleteBoard: useAppStore((s) => s.deleteBoard),
+    addWorkspace: useAppStore((s) => s.addWorkspace),
+    renameWorkspace: useAppStore((s) => s.renameWorkspace),
+    deleteWorkspace: useAppStore((s) => s.deleteWorkspace),
+  };
 
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: number; mime: string; content: string }[]>([]);
+  const [apiKeyInput, setApiKeyInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Archivos adjuntos: content es data URL (base64) para imágenes/binary,
+  // o texto plano para archivos de texto
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: number; mime: string; content: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Contexto actual para el LLM
-  // OPTIMIZACIÃ“N: en vez de subscribirse a `s.boards` (que cambia en cualquier
-  // mutaciÃ³n de cualquier item), usamos selectores mÃ¡s granulares.
+  const getState = useAppStore.getState;
   const currentUserId = useAppStore((s) => s.currentUserId);
+  const users = useAppStore((s) => s.users);
+  const boards = useAppStore((s) => s.boards);
   const activeBoardId = useAppStore((s) => s.activeBoardId);
   const selectedItemId = useAppStore((s) => s.selectedItemId);
-
-  // Solo subscribirse al board activo y al item seleccionado (no a TODO)
-  const activeBoard = useAppStore((s) =>
-    s.boards.find((b) => b.id === s.activeBoardId)
-  );
-  const selectedItem = useAppStore((s) => {
-    if (!s.selectedItemId) return undefined;
-    for (const b of s.boards) {
-      const found = b.items.find((i) => i.id === s.selectedItemId);
-      if (found) return found;
-    }
-    return undefined;
-  });
-  // Nombre del usuario actual y workspace (primitivos estables)
-  const me = useAppStore((s) => s.users.find((u) => u.id === s.currentUserId));
-  const wsName = useAppStore((s) => {
-    const b = s.boards.find((x) => x.id === s.activeBoardId);
-    if (!b) return undefined;
-    return s.workspaces.find((w) => w.id === b.workspaceId)?.name;
-  });
-
-  // Updates y files del item seleccionado (solo si hay item).
-  // PatrÃ³n correcto: subscribirse a los arrays originales (referencia estable)
-  // y derivar con useMemo. NO usar .filter() dentro del selector de useAppStore.
+  const workspaces = useAppStore((s) => s.workspaces);
   const allUpdates = useAppStore((s) => s.updates);
   const allFiles = useAppStore((s) => s.files);
-  const selectedItemUpdates = useMemo(
-    () =>
-      selectedItemId
-        ? allUpdates.filter((u) => u.itemId === selectedItemId)
-        : EMPTY_ARRAY,
-    [allUpdates, selectedItemId]
-  );
-  const selectedItemFiles = useMemo(
-    () =>
-      selectedItemId
-        ? allFiles.filter((f) => f.itemId === selectedItemId)
-        : EMPTY_ARRAY,
-    [allFiles, selectedItemId]
-  );
-  // Lista de usuarios (solo si hay item seleccionado que lo necesite)
-  const users = useAppStore((s) => s.users);
+
+  const activeBoard = boards.find((b) => b.id === activeBoardId);
+  const selectedItem = boards
+    .flatMap((b) => b.items)
+    .find((i) => i.id === selectedItemId);
+  const me = users.find((u) => u.id === currentUserId);
+  const wsName = workspaces.find((w) => w.id === activeBoard?.workspaceId)?.name;
+
+  // Contexto enriquecido: updates y files del item seleccionado (como Monday Sidekick)
+  const selectedItemUpdates = selectedItemId
+    ? allUpdates.filter((u) => u.itemId === selectedItemId)
+    : [];
+  const selectedItemFiles = selectedItemId
+    ? allFiles.filter((f) => f.itemId === selectedItemId)
+    : [];
 
   // Auto-scroll al final
   useEffect(() => {
@@ -253,49 +208,42 @@ export function SidekickChat() {
     }
   }, [messages, thinking]);
 
-  // Ejecutar tool call contra el store (async porque read_attached_files
-  // puede llamar al endpoint VLM para analizar imÃ¡genes).
-  // Recibe los archivos explÃ­citamente para que el loop recursivo de sendToLLM
-  // mantenga el contexto aunque el state attachedFiles se limpie.
+  // Ejecutar tool call contra el store
   const executeToolCall = useCallback(
     async (
       name: string,
       args: any,
-      files: { name: string; size: number; mime: string; content: string }[],
+      files?: any[],
       userPrompt?: string
     ): Promise<{ result: any; uiAction?: string }> => {
       const ctx: ToolExecutionContext = {
         getState: () => useAppStore.getState(),
         actions: storeActions as any,
+        groqApiKey,
         attachedFiles: files,
         userPrompt,
       };
       return executeTool(name, args, ctx);
     },
-    [storeActions]
+    [storeActions, groqApiKey]
   );
 
   // Enviar mensaje al LLM y manejar tool calls en loop.
-  // filesForTool y userPrompt se pasan explÃ­citamente para que el loop
-  // recursivo (cuando hay tool calls) mantenga el contexto de archivos
-  // adjuntos y el prompt original del usuario, aunque el state ya se haya limpiado.
+  // _depth limita las rondas de tool calls para evitar infinite loops.
   const sendToLLM = useCallback(
     async (
       currentMessages: SidekickMessage[],
       filesForTool?: { name: string; size: number; mime: string; content: string }[],
-      userPrompt?: string,
-      // Depth limit para evitar infinite loop si el LLM entra en loop de
-      // tool_calls (ej: llama a read_attached_files, recibe error, vuelve a
-      // llamar, etc.). MÃ¡ximo 8 rondas de tool calling.
+      _userPrompt?: string,
       _depth: number = 0
     ) => {
-          // Safety: si el LLM lleva 8 rondas de tool calls, parar
+      // Safety: máximo 8 rondas de tool calls
       if (_depth >= 8) {
-        const assistantMsgId = nextMsgId();
+        const assistantMsgId = `msg-${Date.now()}`;
         addMessage({
           id: assistantMsgId,
           role: "assistant",
-          content: "⚠️ Detuve la ejecución después de 8 rondas de tool calls seguidas. Esto suele indicar que el modelo entró en un loop. Intenta reformular tu pedido.",
+          content: "⚠️ Detuve la ejecución después de 8 rondas de tool calls. El modelo puede haber entrado en un loop. Intenta reformular tu pedido.",
           streaming: false,
           createdAt: new Date().toISOString(),
         });
@@ -331,7 +279,7 @@ export function SidekickChat() {
         });
 
       // Crear mensaje placeholder del assistant (streaming)
-      const assistantMsgId = nextMsgId();
+      const assistantMsgId = `msg-${Date.now()}`;
       const assistantMsg: SidekickMessage = {
         id: assistantMsgId,
         role: "assistant",
@@ -349,9 +297,7 @@ export function SidekickChat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: groqMessages,
-            groqApiKey: nvidiaApiKey,
-            // Enviar el modelo del settings para que el route lo use
-            model: useAppStore.getState().settings?.defaultModel,
+            groqApiKey: groqApiKey,
             context: {
               userName: me?.name ?? "Usuario",
               activeBoardName: activeBoard?.name,
@@ -421,16 +367,7 @@ export function SidekickChat() {
               } else if (evt === "done") {
                 hasToolCalls = p.hasToolCalls;
               } else if (evt === "error") {
-                // Mensaje mÃ¡s amigable para errores comunes
-                let friendlyMsg = p.message;
-                if (typeof p.message === "string") {
-                  if (p.message.includes("429") || p.message.toLowerCase().includes("rate")) {
-                    friendlyMsg = "El servicio de IA está temporalmente saturado. Espera unos segundos y vuelve a intentarlo — tu mensaje y archivos siguen disponibles.";
-                  } else if (p.message.includes("403")) {
-                    friendlyMsg = "Acceso bloqueado a la API de IA. Si configuraste tu API key de Groq en Settings, verifica que sea válida.";
-                  }
-                }
-                accContent += `\n\n⚠️ ${friendlyMsg}`;
+                accContent += `\n\n⚠️ Error: ${p.message}`;
                 updateMessage(assistantMsgId, { content: accContent });
               }
             } catch {
@@ -456,13 +393,8 @@ export function SidekickChat() {
               ),
             });
 
-            // Ejecutar (async â€” read_attached_files llama al VLM para imÃ¡genes)
-            const { result, uiAction } = await executeToolCall(
-              tc.name,
-              tc.arguments,
-              filesForTool ?? [],
-              userPrompt
-            );
+            // Ejecutar (async — AI Blocks llaman al LLM)
+            const { result, uiAction } = await executeToolCall(tc.name, tc.arguments, filesForTool ?? [], _userPrompt);
 
             // Actualizar tool call con resultado
             updateMessage(assistantMsgId, {
@@ -478,9 +410,9 @@ export function SidekickChat() {
               ),
             });
 
-            // AÃ±adir mensaje de tool result para el LLM
+            // Añadir mensaje de tool result para el LLM
             const toolResultMsg: SidekickMessage = {
-              id: nextMsgId(),
+              id: `msg-${Date.now()}-${tc.id}`,
               role: "tool",
               content: JSON.stringify(result),
               toolCallId: tc.id,
@@ -489,12 +421,12 @@ export function SidekickChat() {
             addMessage(toolResultMsg);
           }
 
-          // Re-llamar al LLM con los tool results (pasando los mismos archivos/prompt)
+          // Re-llamar al LLM con los tool results
           setThinking(false);
-          // PequeÃ±a pausa para que el UI actualice
+          // Pequeña pausa para que el UI actualice
           await new Promise((r) => setTimeout(r, 300));
           const updatedMessages = [...useAppStore.getState().sidekickMessages];
-          await sendToLLM(updatedMessages, filesForTool, userPrompt, _depth + 1);
+          await sendToLLM(updatedMessages, filesForTool, _userPrompt, _depth + 1);
         }
       } catch (e: any) {
         updateMessage(assistantMsgId, {
@@ -509,7 +441,7 @@ export function SidekickChat() {
       addMessage,
       updateMessage,
       setThinking,
-      nvidiaApiKey,
+      groqApiKey,
       me,
       activeBoard,
       activeBoardId,
@@ -528,21 +460,22 @@ export function SidekickChat() {
     // Si hay archivos adjuntos, incluir info en el mensaje
     let fullText = text;
     if (files.length > 0) {
-      const fileNames = files.map((f) => `📎 ${f.name} (${Math.round(f.size / 1024)}KB, ${f.mime})`).join("\n");
+      const fileNames = files.map((f) => {
+        const icon = getFileIcon(f.mime, f.name);
+        return `${icon} ${f.name} (${formatFileSize(f.size)})`;
+      }).join("\n");
       fullText = `${text || "He adjuntado los siguientes archivos:"}\n\nArchivos adjuntos:\n${fileNames}\n\nPor favor lee los archivos adjuntos usando la herramienta read_attached_files.`;
     }
 
     const userMsg: SidekickMessage = {
-      id: nextMsgId(),
+      id: `msg-${Date.now()}`,
       role: "user",
       content: fullText,
       createdAt: new Date().toISOString(),
     };
     addMessage(userMsg);
     setInput("");
-    // Limpiar archivos adjuntos del state AHORA, pero pasamos la lista
-    // capturada `files` y `text` a sendToLLM para que el loop de tool calls
-    // siga teniÃ©ndolos disponibles durante toda la conversaciÃ³n.
+    // Limpiar archivos adjuntos del state, pero pasar la lista a sendToLLM
     setAttachedFiles([]);
 
     const allMessages = [...useAppStore.getState().sidekickMessages];
@@ -562,32 +495,34 @@ export function SidekickChat() {
   };
 
   const handleSaveApiKey = () => {
+    setGroqApiKey(apiKeyInput.trim() || null);
     setShowSettings(false);
+    setApiKeyInput("");
   };
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-[440px] p-0 flex flex-col bg-card"
+        className="w-full sm:max-w-[440px] p-0 flex flex-col bg-white"
       >
-        <SheetHeader className="px-4 py-3 border-b border-border bg-gradient-to-r from-[#0072E5]/5 to-[#A25BFF]/5">
+        <SheetHeader className="px-4 py-3 border-b border-[#E5E8EE] bg-gradient-to-r from-[#0072E5]/[0.03] to-[#A25BFF]/[0.03]">
           <SheetTitle className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0072E5] to-[#A25BFF] flex items-center justify-center text-white shadow-sm">
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-sm font-bold">Sidekick</div>
-              <div className="text-[10px] text-muted-foreground font-normal flex items-center gap-1">
-                {nvidiaApiKey ? (
+              <div className="text-sm font-bold text-[#323338]">Sidekick</div>
+              <div className="text-[10px] text-[#676879] font-normal flex items-center gap-1">
+                {groqApiKey ? (
                   <>
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#76B900]" />
-                    NVIDIA NIM conectado
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00C875]" />
+                    Groq conectado
                   </>
                 ) : (
                   <>
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#FFC700]" />
-                    Usando API key por defecto
+                    Modo demo (Z.ai)
                   </>
                 )}
               </div>
@@ -600,12 +535,15 @@ export function SidekickChat() {
                       variant="ghost"
                       size="sm"
                       className="h-7 w-7 p-0 text-muted-foreground"
-                      onClick={() => setShowSettings(!showSettings)}
+                      onClick={() => {
+                        setApiKeyInput(groqApiKey ?? "");
+                        setShowSettings(!showSettings);
+                      }}
                     >
                       <Settings2 className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Configuración de IA</TooltipContent>
+                  <TooltipContent side="bottom">Configurar API key</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
@@ -635,27 +573,34 @@ export function SidekickChat() {
         {showSettings && (
           <div className="px-4 py-3 border-b border-border bg-secondary/30 fade-in">
             <div className="text-xs font-semibold mb-1.5">
-              NVIDIA NIM — único provider de IA
+              Groq API Key (opcional)
             </div>
-            <p className="text-[11px] text-muted-foreground mb-2">
-              La API key de NVIDIA NIM se configura en ⚙️ Settings &gt; IA &amp; Modelos.
-              Todas las llamadas al modelo usan este único provider.
-            </p>
-            <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="gsk_..."
+              className="w-full h-8 text-xs px-2 rounded border border-border bg-card font-mono"
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-[#0072E5] hover:bg-[#0058B5]"
+                onClick={handleSaveApiKey}
+              >
+                Guardar
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => setShowSettings(false)}
               >
-                Cerrar
+                Cancelar
               </Button>
-              <button
-                className="text-[10px] text-[#0072E5] hover:underline ml-auto"
-                onClick={() => { setShowSettings(false); useAppStore.getState().setShowSettings(true); }}
-              >
-                Abrir Settings →
-              </button>
+              <span className="text-[10px] text-muted-foreground ml-auto">
+                Sin key: usa Z.ai fallback
+              </span>
             </div>
           </div>
         )}
@@ -685,7 +630,7 @@ export function SidekickChat() {
                 ¡Hola{me ? `, ${me.name.split(" ")[0]}` : ""}! 👋
               </div>
               <div className="text-xs text-muted-foreground max-w-[280px] mx-auto mb-4">
-                Soy Sidekick. PÃ­deme en lenguaje natural lo que quieras hacer en
+                Soy Sidekick. Pídeme en lenguaje natural lo que quieras hacer en
                 tu workspace.
               </div>
               <div className="space-y-3 text-left">
@@ -709,7 +654,7 @@ export function SidekickChat() {
                     ))}
                   </div>
                 </div>
-                {/* Acciones rÃ¡pidas */}
+                {/* Acciones rápidas */}
                 <div>
                   <div className="text-[10px] uppercase font-bold text-muted-foreground/70 px-1 mb-1.5 tracking-wider">
                     Acciones
@@ -743,27 +688,30 @@ export function SidekickChat() {
                 <Sparkles className="h-3 w-3" />
               </div>
               <div className="flex items-center gap-1">
-                <span className="animate-bounce" style={{ animationDelay: "0ms" }}>Â·</span>
-                <span className="animate-bounce" style={{ animationDelay: "150ms" }}>Â·</span>
-                <span className="animate-bounce" style={{ animationDelay: "300ms" }}>Â·</span>
+                <span className="animate-bounce" style={{ animationDelay: "0ms" }}>·</span>
+                <span className="animate-bounce" style={{ animationDelay: "150ms" }}>·</span>
+                <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Input */}
-        <div className="border-t border-border p-3 bg-card">
-          {/* Archivos adjuntos */}
+        {/* Input + archivos adjuntos */}
+        <div className="border-t border-[#D0D4E4] p-3 bg-white">
+          {/* Lista de archivos adjuntos */}
           {attachedFiles.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
               {attachedFiles.map((f, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#0072E5]/10 border border-[#0072E5]/20 text-[11px]">
-                  <Paperclip className="h-3 w-3 text-[#0072E5]" />
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#F5F6F8] border border-[#D0D4E4] text-[11px]"
+                >
+                  {getFileIconComponent(f.mime, f.name)}
                   <span className="truncate max-w-[120px]">{f.name}</span>
-                  <span className="text-[9px] text-muted-foreground">{Math.round(f.size / 1024)}KB</span>
+                  <span className="text-[9px] text-[#676879]">{formatFileSize(f.size)}</span>
                   <button
                     onClick={() => setAttachedFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                    className="text-muted-foreground hover:text-[#E2445C]"
+                    className="text-[#676879] hover:text-[#DF2F4A] transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -771,22 +719,17 @@ export function SidekickChat() {
               ))}
             </div>
           )}
+
+          {/* Input hidden para archivos */}
           <input
             ref={fileInputRef}
             type="file"
             multiple
             className="hidden"
+            accept="image/*,.xlsx,.xls,.csv,.docx,.doc,.pdf,.txt,.json,.md,.xml,.html,.css,.js,.ts,.py,.sql,.yaml,.yml,.sh"
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
               files.forEach((file) => {
-                const isImage = file.type.startsWith("image/") ||
-                  /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
-                const isText =
-                  file.type.startsWith("text/") ||
-                  file.type.includes("json") ||
-                  file.type.includes("csv") ||
-                  /\.(txt|json|csv|md|js|ts|tsx|jsx|py|sql|xml|html|css|log|yaml|yml|sh)$/i.test(file.name);
-
                 const reader = new FileReader();
                 reader.onload = () => {
                   const content = typeof reader.result === "string" ? reader.result : "";
@@ -795,13 +738,12 @@ export function SidekickChat() {
                     {
                       name: file.name,
                       size: file.size,
-                      mime: file.type || (isImage ? "image/png" : "application/octet-stream"),
+                      mime: file.type || guessMime(file.name),
                       content,
                     },
                   ]);
                 };
                 reader.onerror = () => {
-                  // Si falla la lectura, al menos guardamos la metadata
                   setAttachedFiles((prev) => [
                     ...prev,
                     {
@@ -812,48 +754,36 @@ export function SidekickChat() {
                     },
                   ]);
                 };
-                if (isImage) {
-                  // Leer como data URL (base64) para enviar al VLM
-                  reader.readAsDataURL(file);
-                } else if (isText) {
-                  reader.readAsText(file);
-                } else {
-                  // Binario no soportado (PDF, Excel, etc.) â€” solo metadata
-                  setAttachedFiles((prev) => [
-                    ...prev,
-                    {
-                      name: file.name,
-                      size: file.size,
-                      mime: file.type || "application/octet-stream",
-                      content: `(archivo binario: ${file.type || "tipo desconocido"} â€” solo se soportan imÃ¡genes y texto por ahora)`,
-                    },
-                  ]);
-                }
+                // Leer todo como data URL (base64) — funciona para imágenes, excel, word, pdf, texto
+                reader.readAsDataURL(file);
               });
               e.target.value = "";
             }}
           />
+
           <div className="relative">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={thinking}
+              className="absolute left-1.5 bottom-1.5 h-7 w-7 flex items-center justify-center rounded text-[#676879] hover:text-[#0073EA] hover:bg-[rgba(103,104,121,0.1)] transition-colors disabled:opacity-50"
+              title="Adjuntar archivo (imágenes, Excel, Word, PDF, CSV, texto)"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
             <Textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="PÃ­deme cualquier cosaâ€¦ (Enter para enviar)"
+              placeholder={attachedFiles.length > 0 ? "Describe qué quieres hacer con los archivos…" : "Pídeme cualquier cosa… (Enter para enviar)"}
               className="min-h-[44px] max-h-[120px] resize-none text-sm pl-10 pr-10"
               rows={1}
               disabled={thinking}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute left-1.5 bottom-1.5 h-7 w-7 flex items-center justify-center rounded text-muted-foreground hover:text-[#0072E5] hover:bg-secondary transition"
-              title="Adjuntar archivo"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
             <Button
               size="sm"
-              className="absolute right-1 bottom-1 h-7 w-7 p-0 bg-[#0072E5] hover:bg-[#0058B5]"
+              className="absolute right-1 bottom-1 h-7 w-7 p-0 bg-[#0073EA] hover:bg-[#0058B5]"
+              style={{ borderRadius: "4px" }}
               onClick={handleSend}
               disabled={(!input.trim() && attachedFiles.length === 0) || thinking}
             >
@@ -864,8 +794,8 @@ export function SidekickChat() {
               )}
             </Button>
           </div>
-          <div className="text-[10px] text-muted-foreground/60 mt-1.5 text-center">
-            Sidekick puede ejecutar acciones. Verifica antes de confirmar cambios destructivos.
+          <div className="text-[10px] text-[#676879]/60 mt-1.5 text-center">
+            📎 Sube imágenes, Excel, Word, PDF, CSV o texto · La IA los interpretará automáticamente
           </div>
         </div>
       </SheetContent>
@@ -874,15 +804,15 @@ export function SidekickChat() {
 }
 
 // ============================================================================
-// MessageBubble â€” renderiza un mensaje con tool calls
+// MessageBubble — renderiza un mensaje con tool calls
 // ============================================================================
-const MessageBubble = memo(function MessageBubble({ msg }: { msg: SidekickMessage }) {
+function MessageBubble({ msg }: { msg: SidekickMessage }) {
   const isUser = msg.role === "user";
   const isTool = msg.role === "tool";
 
   if (isTool) {
-    // Los mensajes de tool result no se muestran directamente, solo vÃ­a el
-    // tool call del assistant que los originÃ³
+    // Los mensajes de tool result no se muestran directamente, solo vía el
+    // tool call del assistant que los originó
     return null;
   }
 
@@ -916,7 +846,7 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: SidekickMessag
             msg.streaming && "cursor-blink"
           )}
         >
-          {msg.content || (msg.streaming ? "" : "â€¦")}
+          {msg.content || (msg.streaming ? "" : "…")}
         </div>
 
         {/* Tool calls */}
@@ -934,19 +864,19 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: SidekickMessag
             <span
               className={cn(
                 "inline-block w-1.5 h-1.5 rounded-full",
-                msg.backend === "nvidia" ? "bg-[#76B900]" : "bg-[#00C875]"
+                msg.backend === "groq" ? "bg-[#FF642E]" : "bg-[#00C875]"
               )}
             />
-            NVIDIA · {msg.model}
+            {msg.backend === "groq" ? "Groq" : "Z.ai"} · {msg.model}
           </div>
         )}
       </div>
     </motion.div>
   );
-});
+}
 
 // ============================================================================
-// ToolCallCard â€” muestra un tool call ejecutÃ¡ndose con su resultado
+// ToolCallCard — muestra un tool call ejecutándose con su resultado
 // ============================================================================
 function ToolCallCard({
   tc,
@@ -956,21 +886,21 @@ function ToolCallCard({
   const [expanded, setExpanded] = useState(false);
 
   const toolLabels: Record<string, string> = {
-    list_boards: "ðŸ“‹ Listar boards",
-    get_active_board: "ðŸ“Š Obtener board activo",
-    get_item: "ðŸ” Ver item",
-    search_items: "ðŸ”Ž Buscar items",
-    create_item: "âž• Crear item",
-    create_items_batch: "âž• Crear items (batch)",
-    update_column_value: "âœï¸ Actualizar columna",
-    move_item: "ðŸ”„ Mover item",
-    delete_item: "ðŸ—‘ï¸ Eliminar item",
-    add_update: "ðŸ’¬ AÃ±adir update",
-    add_group: "ðŸ“ Crear grupo",
-    navigate_to_board: "ðŸ§­ Navegar a board",
-    open_item: "ðŸ“‚ Abrir item",
-    summarize_board: "ðŸ“Š Resumir board",
-    find_at_risk_items: "âš ï¸ Encontrar items en riesgo",
+    list_boards: "📋 Listar boards",
+    get_active_board: "📊 Obtener board activo",
+    get_item: "🔍 Ver item",
+    search_items: "🔎 Buscar items",
+    create_item: "➕ Crear item",
+    create_items_batch: "➕ Crear items (batch)",
+    update_column_value: "✏️ Actualizar columna",
+    move_item: "🔄 Mover item",
+    delete_item: "🗑️ Eliminar item",
+    add_update: "💬 Añadir update",
+    add_group: "📁 Crear grupo",
+    navigate_to_board: "🧭 Navegar a board",
+    open_item: "📂 Abrir item",
+    summarize_board: "📊 Resumir board",
+    find_at_risk_items: "⚠️ Encontrar items en riesgo",
   };
 
   const label = toolLabels[tc.name] ?? tc.name;
@@ -1038,13 +968,13 @@ function ToolCallCard({
 }
 
 // ============================================================================
-// SidekickButton â€” botÃ³n flotante estilo monday sidekick (esquina inferior derecha)
+// SidekickButton — botón flotante estilo monday sidekick (esquina inferior derecha)
 // ============================================================================
 export function SidekickButton() {
   const open = useAppStore((s) => s.showSidekick);
   const setOpen = useAppStore((s) => s.setShowSidekick);
 
-  if (open) return null; // oculto cuando el panel estÃ¡ abierto
+  if (open) return null; // oculto cuando el panel está abierto
 
   return (
     <motion.button
@@ -1063,3 +993,56 @@ export function SidekickButton() {
   );
 }
 
+// ============================================================================
+// Helpers para archivos adjuntos
+// ============================================================================
+
+function getFileIcon(mime: string, name: string): string {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (mime.startsWith("image/")) return "🖼️";
+  if (mime.includes("spreadsheet") || ["xlsx", "xls", "csv"].includes(ext)) return "📊";
+  if (mime.includes("word") || ["docx", "doc"].includes(ext)) return "📄";
+  if (mime === "application/pdf" || ext === "pdf") return "📕";
+  if (mime.startsWith("text/") || ["txt", "json", "md"].includes(ext)) return "📝";
+  return "📎";
+}
+
+function getFileIconComponent(mime: string, name: string) {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (mime.startsWith("image/")) return <ImageIcon className="h-3 w-3 text-[#0073EA]" />;
+  if (mime.includes("spreadsheet") || ["xlsx", "xls", "csv"].includes(ext))
+    return <FileSpreadsheet className="h-3 w-3 text-[#00C875]" />;
+  if (mime.includes("word") || ["docx", "doc"].includes(ext))
+    return <FileText className="h-3 w-3 text-[#0073EA]" />;
+  if (mime === "application/pdf" || ext === "pdf")
+    return <FileText className="h-3 w-3 text-[#DF2F4A]" />;
+  if (mime.startsWith("text/")) return <FileText className="h-3 w-3 text-[#676879]" />;
+  return <File className="h-3 w-3 text-[#676879]" />;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function guessMime(name: string): string {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  const map: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    csv: "text/csv",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    pdf: "application/pdf",
+    txt: "text/plain",
+    json: "application/json",
+    md: "text/markdown",
+  };
+  return map[ext] ?? "application/octet-stream";
+}

@@ -83,7 +83,7 @@ export function CalendarView() {
           {format(cursor, "MMMM yyyy", { locale: es })}
         </span>
         <span className="ml-auto text-[11px] text-muted-foreground">
-          {board.items.filter((i) => {
+          {board.items.filter((i: any) => !i.archived).filter((i) => {
             const cv = i.columnValues.find((v) => v.columnId === dateColumn.id);
             return cv?.value?.date;
           }).length}{" "}

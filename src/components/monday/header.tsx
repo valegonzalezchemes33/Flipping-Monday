@@ -2,7 +2,6 @@
 // ============================================================================
 // Header Monday — Search global, Notifications (del store), Profile
 // ============================================================================
-import { useMemo } from "react";
 import {
   Bell,
   HelpCircle,
@@ -16,9 +15,6 @@ import {
   Clock,
   Zap,
   AtSign,
-  Settings,
-  Sun,
-  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
@@ -51,11 +47,10 @@ const NOTIF_ICONS = {
 };
 
 export function Header() {
-  // OPTIMIZACIÓN: subscribirse solo al board activo (no a todo el array)
-  // y solo a primitivos/objetos pequeños.
-  const board = useAppStore((s) =>
-    s.boards.find((b) => b.id === s.activeBoardId)
-  );
+  const boards = useAppStore((s) => s.boards);
+  const activeBoardId = useAppStore((s) => s.activeBoardId);
+  const board = boards.find((b) => b.id === activeBoardId);
+  const workspaces = useAppStore((s) => s.workspaces);
   const notifications = useAppStore((s) => s.notifications);
   const markAllNotificationsRead = useAppStore((s) => s.markAllNotificationsRead);
   const markNotificationRead = useAppStore((s) => s.markNotificationRead);
@@ -64,43 +59,24 @@ export function Header() {
   const setShowAgentBuilder = useAppStore((s) => s.setShowAgentBuilder);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const setShowExportImport = useAppStore((s) => s.setShowExportImport);
-  const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const updateSettings = useAppStore((s) => s.updateSettings);
-  const theme = useAppStore((s) => s.settings.theme);
-  const hasApiKey = useAppStore((s) => !!(s.settings.nvidiaApiKey));
-  // Solo el nombre del workspace activo (primitivo, estable)
-  const wsName = useAppStore((s) => {
-    const b = s.boards.find((x) => x.id === s.activeBoardId);
-    if (!b) return undefined;
-    return s.workspaces.find((w) => w.id === b.workspaceId)?.name;
-  });
-  // Lista de boards solo con id+name para el dropdown (estable).
-  // Patrón correcto: subscribirse al array original (referencia estable) y
-  // derivar con useMemo. NO usar selectores con .map()/.filter() directamente
-  // en useAppStore — causan infinite loop con useSyncExternalStore.
-  const rawBoards = useAppStore((s) => s.boards);
-  const boardList = useMemo(
-    () => rawBoards.map((b) => ({ id: b.id, name: b.name, workspaceId: b.workspaceId })),
-    [rawBoards]
-  );
-  const workspaces = useAppStore((s) => s.workspaces);
 
-  const unread = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+  const unread = notifications.filter((n) => !n.read).length;
+  const wsName = workspaces.find((w) => w.id === board?.workspaceId)?.name;
 
   return (
-    <header className="h-11 bg-card border-b border-border flex items-center px-4 gap-3 shrink-0">
-      {/* Breadcrumb — más limpio */}
-      <div className="flex items-center gap-1.5 text-sm min-w-0">
-        <span className="text-muted-foreground truncate max-w-[160px]">{wsName}</span>
-        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-        <span className="text-foreground font-medium truncate max-w-[200px]">{board?.name}</span>
+    <header className="h-12 bg-white border-b border-[#D0D4E4] flex items-center px-4 gap-3 shrink-0 z-30">
+      {/* Breadcrumb — estilo Monday Vibe */}
+      <div className="flex items-center gap-1 text-[14px] min-w-0">
+        <span className="text-[#676879] truncate max-w-[160px] hover:text-[#323338] cursor-default transition-colors">{wsName}</span>
+        <ChevronRight className="h-3.5 w-3.5 text-[#676879]/40 shrink-0" />
+        <span className="text-[#323338] font-medium truncate max-w-[200px]">{board?.name}</span>
       </div>
 
-      {/* Center: search */}
+      {/* Center: search — estilo Monday Vibe */}
       <div className="hidden md:flex flex-1 justify-center">
         <button
           onClick={() => setCommandPaletteOpen(true)}
-          className="w-full max-w-md flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 hover:bg-secondary text-sm text-muted-foreground hover:text-foreground transition"
+          className="w-full max-w-md flex items-center gap-2 px-3 py-1.5 rounded bg-[#F5F6F8] hover:bg-[rgba(103,104,121,0.1)] text-[14px] text-[#676879] hover:text-[#323338] transition-colors duration-100"
         >
           <Search className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1 text-left">Buscar en todo el workspace…</span>
@@ -136,22 +112,62 @@ export function Header() {
                       method: "POST",
                       body: formData,
                     });
+                    // FIX: si el servidor devolvió HTML (ej: página de error 500/502 de Next.js),
+                    // res.json() falla con "Unexpected token '<'". Manejarlo graceful.
+                    const contentType = res.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                      const errorMsg = res.status === 502
+                        ? "El servidor se saturó procesando el Excel. Intenta con un archivo más pequeño o recarga la página."
+                        : res.status === 500
+                        ? "Error interno del servidor. Posible saturación de memoria."
+                        : `El servidor devolvió una respuesta no válida (HTTP ${res.status}).`;
+                      toast.error("Error al importar Excel", {
+                        description: errorMsg,
+                      });
+                      return;
+                    }
                     const data = await res.json();
+                    if (!res.ok) {
+                      toast.error("Error al importar Excel", {
+                        description: data.error || `Error HTTP ${res.status}`,
+                      });
+                      return;
+                    }
                     if (data.ok && data.board) {
-                      useAppStore.getState().mergeImportedData({ boards: [data.board] });
-                      const imported = useAppStore.getState().boards.find((b) => b.id === data.board.id);
-                      if (imported) {
-                        useAppStore.getState().setActiveBoard(imported.id);
-                        useAppStore.getState().setSidebarView("boards");
-                      }
-                      toast.success("Excel importado", {
-                        description: `${data.summary.items} tareas en ${data.summary.groups} grupos`,
+                      // FIX: SIEMPRE crear un workspace nuevo al importar Excel.
+                      // El usuario quiere que cada importación cree su propio workspace.
+                      const state = useAppStore.getState();
+                      const wsName = data.board.name
+                        ? data.board.name.slice(0, 30)
+                        : "Importado de Excel";
+                      const wsId = state.addWorkspace(wsName);
+
+                      // Actualizar el board con el workspaceId del workspace recién creado
+                      const boardWithWs = { ...data.board, workspaceId: wsId };
+                      state.mergeImportedData({
+                        boards: [boardWithWs],
+                      });
+                      // Actualizar boardIds del workspace
+                      useAppStore.setState((s) => ({
+                        workspaces: s.workspaces.map((w) =>
+                          w.id === wsId
+                            ? { ...w, boardIds: [...w.boardIds, boardWithWs.id] }
+                            : w
+                        ),
+                      }));
+                      useAppStore.getState().setActiveBoard(boardWithWs.id);
+                      useAppStore.getState().setSidebarView("boards");
+                      const warningsText = data.warnings?.length > 0
+                        ? ` · ${data.warnings.join(", ")}`
+                        : "";
+                      toast.success("Excel importado correctamente", {
+                        description: `${data.summary.items} tareas · ${data.summary.groups} grupos · ${data.summary.columns} columnas${warningsText}`,
                       });
                     } else {
-                      toast.error("Error al importar", { description: data.error });
+                      toast.error("Error al importar", { description: data.error || "Error desconocido" });
                     }
                   } catch (err: any) {
-                    toast.error("Error", { description: err?.message });
+                    toast.error("Error", { description: err?.message ?? "Error de red" });
                   }
                 };
                 input.click();
@@ -245,9 +261,7 @@ export function Header() {
                   onClick={() => {
                     markNotificationRead(n.id);
                     if (n.itemId) {
-                      // Buscar el board que contiene el item sin subscribirse a todo el array
-                      const allBoards = useAppStore.getState().boards;
-                      for (const b of allBoards) {
+                      for (const b of boards) {
                         if (b.items.some((i) => i.id === n.itemId)) {
                           setActiveBoard(b.id);
                           selectItem(n.itemId);
@@ -324,40 +338,6 @@ export function Header() {
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 hover:bg-secondary"
-              onClick={() => {
-                const next = theme === "dark" ? "light" : "dark";
-                updateSettings({ theme: next });
-              }}
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 hover:bg-secondary relative"
-              onClick={() => setShowSettings(true)}
-            >
-              <Settings className="h-4 w-4" />
-              {hasApiKey && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#0072E5] ring-2 ring-card" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Configuración{hasApiKey ? " · API keys activas" : ""}</TooltipContent>
-        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

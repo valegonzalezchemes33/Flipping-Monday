@@ -1,15 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Figtree, Poppins, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { HydrationGate } from "@/components/monday/hydration-gate";
-import { ErrorBoundary } from "@/components/ui/error-boundary";
 
-const inter = Inter({
+// Figtree = body font de Monday.com (Vibe design system)
+const figtree = Figtree({
   variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+// Poppins = heading font de Monday.com
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -33,13 +41,12 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
+        className={`${figtree.variable} ${poppins.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
+        style={{ fontFamily: "var(--font-inter), Figtree, ui-sans-serif, system-ui, sans-serif" }}
       >
-        <ErrorBoundary>
-          <HydrationGate>{children}</HydrationGate>
-          <Toaster />
-          <Sonner />
-        </ErrorBoundary>
+        {children}
+        <Toaster />
+        <Sonner />
       </body>
     </html>
   );

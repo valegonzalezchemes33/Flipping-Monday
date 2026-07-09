@@ -1,34 +1,29 @@
 "use client";
 // ============================================================================
-// useToastActions — instala toasts automáticos para acciones del store
+// useToastActions — toasts automáticos para acciones del store
 // ============================================================================
-// FIX: antes este hook era un no-op (useEffect vacío). Ahora subscribimos
-// a cambios del store y emitimos toasts cuando detectamos nuevas entradas
-// en activities (item_created, update_posted, etc.).
+// FIX: antes era un no-op. Ahora subscribimos a cambios de activities
+// y emitimos toasts cuando detectamos nuevas entradas.
 import { useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
 import { toast } from "sonner";
 
 export function useToastActions() {
-  // Track del último activity count para detectar nuevos
   const lastActivityCountRef = useRef(0);
 
   useEffect(() => {
-    // Inicializar el count con el estado actual (no tostar al montar)
-    let prevCount = useAppStore.getState().activities.length;
-    lastActivityCountRef.current = prevCount;
+    // Inicializar con el count actual (no tostar al montar)
+    lastActivityCountRef.current = useAppStore.getState().activities.length;
 
-    // Zustand subscribe con listener simple — chequeamos cambios manualmente
-    const unsubscribe = useAppStore.subscribe(() => {
-      const currentCount = useAppStore.getState().activities.length;
-      if (currentCount > prevCount) {
-        // Hay nuevas activities — obtener solo las nuevas
-        const newActivities = useAppStore.getState().activities.slice(0, currentCount - prevCount);
+    const unsubscribe = useAppStore.subscribe((state) => {
+      const currentCount = state.activities.length;
+      if (currentCount > lastActivityCountRef.current) {
+        const newCount = currentCount - lastActivityCountRef.current;
+        const newActivities = state.activities.slice(0, newCount);
         for (const act of newActivities) {
           showToastForActivity(act.type, act.data);
         }
       }
-      prevCount = currentCount;
       lastActivityCountRef.current = currentCount;
     });
 
@@ -49,6 +44,5 @@ function showToastForActivity(type: string, data: any) {
     case "item_archived":
       toast.success("Tarea archivada");
       break;
-    // No tostar para column_changed, item_updated (demasiado ruidoso)
   }
 }

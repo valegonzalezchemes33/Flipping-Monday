@@ -34,11 +34,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function MainTableView() {
-  // OPTIMIZACIÓN: subscribirse SOLO al board activo, no a todo el array de boards.
-  // Antes: const boards = useAppStore((s) => s.boards) causaba re-render en
-  // cualquier mutación de cualquier board. Ahora solo re-renderiza cuando
-  // cambia el board activo.
-  const board = useAppStore((s) => s.boards.find((b) => b.id === s.activeBoardId));
+  const boards = useAppStore((s) => s.boards);
+  const activeBoardId = useAppStore((s) => s.activeBoardId);
+  const board = boards.find((b) => b.id === activeBoardId);
   const users = useAppStore((s) => s.users);
   const selectItem = useAppStore((s) => s.selectItem);
   const selectedItemId = useAppStore((s) => s.selectedItemId);
@@ -52,7 +50,6 @@ export function MainTableView() {
   const deleteItem = useAppStore((s) => s.deleteItem);
   const duplicateItem = useAppStore((s) => s.duplicateItem);
   const archiveItem = useAppStore((s) => s.archiveItem);
-  const reorderItem = useAppStore((s) => s.reorderItem);
   const addColumn = useAppStore((s) => s.addColumn);
   const setShowAddColumn = useAppStore((s) => s.setShowAddColumn);
   const sorts = useAppStore((s) => s.sorts);
@@ -65,7 +62,6 @@ export function MainTableView() {
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
-  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [renamingCol, setRenamingCol] = useState<string | null>(null);
@@ -147,115 +143,57 @@ export function MainTableView() {
     if (newItemName.trim()) {
       addItem(board.id, groupId, newItemName.trim());
       setNewItemName("");
+      setAddingToGroup(null);
     }
-    // FIX: siempre resetear addingToGroup en blur, incluso si está vacío.
-    // Antes, si el usuario hacía blur con input vacío, el input quedaba abierto para siempre.
-    setAddingToGroup(null);
   };
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      {/* ── Batch Actions Toolbar sticky ── */}
+      {/* Selection bar cuando hay items seleccionados */}
       {selectedRowIds.length > 0 && (
-        <div className="sticky top-0 z-30 bg-[#0072E5] shadow-lg">
-          <div className="flex items-center gap-1 px-3 py-2 text-white text-xs">
-            {/* Count + deselect */}
-            <div className="flex items-center gap-2 mr-2">
-              <button
-                onClick={clearRowSelection}
-                className="w-5 h-5 rounded flex items-center justify-center bg-white/20 hover:bg-white/30 transition text-white font-bold text-[10px]"
-                title="Deseleccionar"
-              >
-                ✕
-              </button>
-              <span className="font-semibold">
-                {selectedRowIds.length} elemento{selectedRowIds.length > 1 ? "s" : ""} seleccionado{selectedRowIds.length > 1 ? "s" : ""}
-              </span>
-            </div>
-
-            <div className="w-px h-4 bg-white/30 mx-1" />
-
-            {/* Mover a grupo */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/20 transition font-medium">
-                  <FolderInput className="h-3 w-3" />
-                  Mover a
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
-                <div className="px-2 py-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
-                  Mover a grupo
-                </div>
-                <DropdownMenuSeparator />
-                {board.groups.map((g) => (
-                  <DropdownMenuItem
-                    key={g.id}
-                    onClick={() => {
-                      selectedRowIds.forEach((id) => moveItem(id, g.id));
-                      clearRowSelection();
-                    }}
-                  >
-                    <span
-                      className="w-2.5 h-2.5 rounded-sm mr-2 shrink-0"
-                      style={{ background: g.color }}
-                    />
-                    {g.title}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Duplicar */}
-            <button
-              onClick={() => {
-                selectedRowIds.forEach((id) => duplicateItem(id));
-                clearRowSelection();
-              }}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/20 transition font-medium"
-            >
-              <Copy className="h-3 w-3" />
-              Duplicar
-            </button>
-
-            {/* Archivar */}
-            <button
-              onClick={() => {
-                selectedRowIds.forEach((id) => archiveItem(id));
-                clearRowSelection();
-              }}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/20 transition font-medium"
-            >
-              <Archive className="h-3 w-3" />
-              Archivar
-            </button>
-
-            <div className="w-px h-4 bg-white/30 mx-1" />
-
-            {/* Eliminar */}
-            <button
-              onClick={() => {
-                if (confirm(`¿Eliminar ${selectedRowIds.length} elemento(s)?`)) {
-                  selectedRowIds.forEach((id) => deleteItem(id));
-                  clearRowSelection();
-                }
-              }}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-500/80 transition font-medium text-red-100"
-            >
-              <Trash2 className="h-3 w-3" />
-              Eliminar
-            </button>
-          </div>
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-[#0072E5]/10 border-b border-[#0072E5]/20 text-xs">
+          <span className="font-medium text-[#0072E5]">{selectedRowIds.length} seleccionados</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px] text-[#0072E5]"
+            onClick={() => {
+              selectedRowIds.forEach((id) => duplicateItem(id));
+              clearRowSelection();
+            }}
+          >
+            <Copy className="h-3 w-3 mr-1" />
+            Duplicar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px] text-[#E2445C]"
+            onClick={() => {
+              selectedRowIds.forEach((id) => archiveItem(id));
+              clearRowSelection();
+            }}
+          >
+            <Archive className="h-3 w-3 mr-1" />
+            Archivar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px] text-muted-foreground ml-auto"
+            onClick={clearRowSelection}
+          >
+            Cancelar selección
+          </Button>
         </div>
       )}
 
-
-      {/* Column header */}
-      <div className="flex items-stretch border-b border-border bg-card text-[11px] font-semibold text-muted-foreground uppercase tracking-wide sticky top-0 z-10">
-        <div className="w-8 shrink-0 border-r border-border flex items-center justify-center">
+      {/* Column header — estilo Monday Vibe: bg #F5F6F8, 36px alto, uppercase 12px */}
+      <div className="flex items-stretch border-b border-[#D0D4E4] bg-[#F5F6F8] text-[12px] font-semibold text-[#676879] uppercase tracking-wide sticky top-0 z-10" style={{ height: "36px" }}>
+        <div className="w-8 shrink-0 border-r border-[#D0D4E4] flex items-center justify-center hover:bg-[rgba(103,104,121,0.1)] transition-colors">
           <input
             type="checkbox"
-            className="h-3 w-3 accent-[#0072E5]"
+            className="h-3 w-3 accent-[#0073EA] cursor-pointer"
             checked={allSelected}
             onChange={() =>
               allSelected ? clearRowSelection() : selectAllRows(allFilteredIds)
@@ -353,20 +291,9 @@ export function MainTableView() {
             onMoveItem={(itemId, toGroupId) => moveItem(itemId, toGroupId)}
             draggingItemId={draggingItemId}
             dragOverGroupId={dragOverGroupId}
-            dragOverItemId={dragOverItemId}
             onDragStart={(id) => setDraggingItemId(id)}
             onDragOver={(gid) => setDragOverGroupId(gid)}
-            onDragOverItem={(iid) => setDragOverItemId(iid)}
             onDrop={handleDrop}
-            onDropOnItem={(targetItemId) => {
-              if (draggingItemId && draggingItemId !== targetItemId) {
-                const target = board.items.find((i) => i.id === targetItemId);
-                if (target) reorderItem(draggingItemId, target.position);
-              }
-              setDraggingItemId(null);
-              setDragOverGroupId(null);
-              setDragOverItemId(null);
-            }}
             addingToGroup={addingToGroup}
             setAddingToGroup={setAddingToGroup}
             newItemName={newItemName}
@@ -424,8 +351,8 @@ function ColumnHeader({
   };
   return (
     <div
-      className="px-2 py-2 border-r border-border last:border-r-0 flex items-center gap-1 hover:bg-secondary/40 cursor-pointer group"
-      style={{ width: col.width ?? 140, minWidth: 100 }}
+      className="px-3 border-r border-[#D0D4E4] last:border-r-0 flex items-center gap-1.5 hover:bg-[rgba(103,104,121,0.1)] cursor-pointer group transition-colors duration-100"
+      style={{ width: col.width ?? 140, minWidth: 100, height: "36px" }}
       onClick={cycleSort}
     >
       {isRenaming ? (
@@ -443,16 +370,16 @@ function ColumnHeader({
         />
       ) : (
         <>
-          <span className="truncate">{col.title}</span>
+          <span className="truncate flex-1">{col.title}</span>
           {col.type === "ai_agent" && <span className="text-[#0072E5]">🤖</span>}
           {sort ? (
             sort.dir === "asc" ? (
-              <ArrowUp className="h-3 w-3 text-[#0072E5]" />
+              <ArrowUp className="h-3 w-3 text-[#0072E5] shrink-0" />
             ) : (
-              <ArrowDown className="h-3 w-3 text-[#0072E5]" />
+              <ArrowDown className="h-3 w-3 text-[#0072E5] shrink-0" />
             )
           ) : (
-            <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-50" />
+            <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-40 shrink-0 transition-opacity" />
           )}
         </>
       )}
@@ -460,7 +387,7 @@ function ColumnHeader({
         <DropdownMenuTrigger asChild>
           <button
             onClick={(e) => e.stopPropagation()}
-            className="ml-auto opacity-0 group-hover:opacity-100 h-5 w-5 hover:bg-secondary rounded flex items-center justify-center"
+            className="ml-auto opacity-0 group-hover:opacity-100 h-5 w-5 hover:bg-[#E5E8EE] rounded flex items-center justify-center transition-opacity"
           >
             <MoreHorizontal className="h-3 w-3" />
           </button>
@@ -513,12 +440,9 @@ function GroupBlock({
   onMoveItem,
   draggingItemId,
   dragOverGroupId,
-  dragOverItemId,
   onDragStart,
   onDragOver,
-  onDragOverItem,
   onDrop,
-  onDropOnItem,
   addingToGroup,
   setAddingToGroup,
   newItemName,
@@ -546,12 +470,9 @@ function GroupBlock({
   onMoveItem: (itemId: string, toGroupId: string) => void;
   draggingItemId: string | null;
   dragOverGroupId: string | null;
-  dragOverItemId: string | null;
   onDragStart: (id: string) => void;
   onDragOver: (gid: string) => void;
-  onDragOverItem: (iid: string) => void;
   onDrop: (gid: string) => void;
-  onDropOnItem: (targetItemId: string) => void;
   addingToGroup: string | null;
   setAddingToGroup: (id: string | null) => void;
   newItemName: string;
@@ -576,18 +497,18 @@ function GroupBlock({
         onDrop(group.id);
       }}
     >
-      {/* Group header */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-secondary/40 group">
-        <button onClick={onToggleCollapse} className="p-0.5 hover:bg-secondary rounded">
+      {/* Group header — estilo Monday Vibe: bg blanco, color del grupo como barra */}
+      <div className="flex items-center gap-1.5 px-2 bg-white border-b border-[#D0D4E4] group" style={{ height: "36px" }}>
+        <button onClick={onToggleCollapse} className="p-0.5 hover:bg-[rgba(103,104,121,0.1)] rounded transition-colors">
           {group.collapsed ? (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-3.5 w-3.5 text-[#676879]" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="h-3.5 w-3.5 text-[#676879]" />
           )}
         </button>
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 cursor-grab" />
+        <GripVertical className="h-3.5 w-3.5 text-[#676879]/30 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity" />
         <span
-          className="h-3 w-3 rounded-sm shrink-0"
+          className="w-1 h-4 rounded shrink-0"
           style={{ background: group.color }}
         />
         {editingName === group.id ? (
@@ -613,17 +534,17 @@ function GroupBlock({
               setNameDraft(group.title);
               setEditingName(group.id);
             }}
-            className="text-xs font-semibold text-foreground hover:text-[#0072E5] transition"
+            className="text-xs font-semibold text-[#323338] hover:text-[#0072E5] transition-colors"
           >
             {group.title}
           </button>
         )}
-        <span className="text-[10px] text-muted-foreground">{items.length}</span>
-        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+        <span className="text-[10px] text-[#676879] font-medium bg-[#F0F1F5] px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{items.length}</span>
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-[11px] text-muted-foreground"
+            className="h-6 px-2 text-[11px] text-[#676879] hover:text-[#323338] hover:bg-[#F0F1F5]"
             onClick={() => setAddingToGroup(group.id)}
           >
             <Plus className="h-3 w-3 mr-1" />
@@ -675,15 +596,6 @@ function GroupBlock({
               onSelect={() => onSelectItem(item.id)}
               onToggleRow={() => onToggleRow(item.id)}
               onDragStart={() => onDragStart(item.id)}
-              onDragOver={(e) => {
-                e.preventDefault();
-                onDragOverItem(item.id);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                onDropOnItem(item.id);
-              }}
-              isDragOver={dragOverItemId === item.id}
               onUpdateName={(name) => onUpdateItemName(item.id, name)}
               onDuplicate={() => onDuplicateItem(item.id)}
               onArchive={() => onArchiveItem(item.id)}
@@ -744,9 +656,6 @@ function ItemRow({
   onSelect,
   onToggleRow,
   onDragStart,
-  onDragOver,
-  onDrop,
-  isDragOver,
   onUpdateName,
   onDuplicate,
   onArchive,
@@ -762,9 +671,6 @@ function ItemRow({
   onSelect: () => void;
   onToggleRow: () => void;
   onDragStart: () => void;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-  isDragOver?: boolean;
   onUpdateName: (name: string) => void;
   onDuplicate: () => void;
   onArchive: () => void;
@@ -779,23 +685,31 @@ function ItemRow({
     <div
       draggable
       onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
       onClick={onSelect}
+      // FIX: accesibilidad — navegación por teclado (WCAG 2.1)
+      role="row"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      aria-label={`Tarea: ${item.name}`}
       className={cn(
-        "flex items-stretch border-b border-border bg-card cursor-pointer transition group hover:bg-secondary/20",
-        selected && "bg-[#0072E5]/5 ring-1 ring-inset ring-[#0072E5]/20",
-        rowSelected && "bg-[#0072E5]/8",
-        isDragOver && "border-t-2 border-t-[#0072E5] drag-over"
+        "flex items-stretch border-b border-[#F5F6F8] bg-white cursor-pointer transition-colors duration-100 group hover:bg-[rgba(103,104,121,0.1)]",
+        selected && "bg-[#CCE5FF] hover:bg-[#CCE5FF]",
+        rowSelected && "bg-[#CCE5FF] hover:bg-[#CCE5FF]"
       )}
+      style={{ height: "36px" }}
     >
-      <div className="w-8 shrink-0 border-r border-border flex items-center justify-center">
+      <div className="w-8 shrink-0 border-r border-[#D0D4E4] flex items-center justify-center hover:bg-[rgba(103,104,121,0.1)] transition-colors">
         <input
           type="checkbox"
           checked={rowSelected}
           onChange={onToggleRow}
           onClick={(e) => e.stopPropagation()}
-          className="h-3 w-3 accent-[#0072E5]"
+          className="h-3 w-3 accent-[#0073EA] cursor-pointer"
         />
       </div>
       {columns.map((col) => {
@@ -803,7 +717,7 @@ function ItemRow({
         return (
           <div
             key={col.id}
-            className="border-r border-border last:border-r-0 flex items-center min-w-0 overflow-hidden"
+            className="border-r border-[#F5F6F8] last:border-r-0 flex items-center min-w-0 overflow-hidden hover:bg-[rgba(103,104,121,0.05)] transition-colors"
             style={{ width: col.width ?? 140, minWidth: 100 }}
           >
             {col.id === "name" ? (

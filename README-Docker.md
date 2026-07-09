@@ -53,33 +53,26 @@ C:\monday-ai\
 
 ## ⚙️ Paso 2: Configurar variables de entorno
 
-**IMPORTANTE**: Ahora necesitas una base de datos **PostgreSQL externa** (no SQLite local). Proveedores recomendados (todos con tier gratis):
-
-| Proveedor | Tier gratis | URL ejemplo |
-|-----------|-------------|-------------|
-| **Neon** | 512 MB, serverless | `postgresql://user:pass@ep-xxx.us-east-1.aws.neon.tech/monday_ai` |
-| **Supabase** | 500 MB | `postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres` |
-| **Vercel Postgres** | 256 MB | `postgres://user:pass@host:5432/verceldb` |
-
 1. Abre PowerShell o Explorador de archivos
 2. Ve a `C:\monday-ai`
 3. Copia `.env.example` y renómbralo a `.env`
 4. Ábrelo con Bloc de notas o VS Code
-5. **Completa tu `DATABASE_URL`** (obligatorio — apunta a tu Postgres):
-   ```env
-   DATABASE_URL="postgresql://user:password@host:5432/monday_ai?schema=public"
-   GROQ_API_KEY=gsk_tu_api_key_aqui
-   NODE_ENV=production
-   PORT=3000
-   ```
+5. Completa tu Groq API key (opcional pero recomendado para chat más rápido):
+
+```env
+DATABASE_URL=file:/app/data/custom.db
+GROQ_API_KEY=gsk_tu_api_key_aqui
+NODE_ENV=production
+PORT=3000
+```
 
 > **Cómo conseguir una Groq API key gratis**:
-> 1. Ve a https://build.nvidia.com/
+> 1. Ve a https://console.groq.com/keys
 > 2. Crea una cuenta (gratis, sin tarjeta de crédito)
-> 3. Click "Get API Key"
-> 4. Copia el valor que empieza con `nvapi_`
+> 3. Click "Create API Key"
+> 4. Copia el valor que empieza con `gsk_`
 
-> **Sin NVIDIA Integrate API key**: el chat funciona igual, pero usa el SDK Z.ai que es más lento y tiene rate limits.
+> **Sin Groq API key**: el chat funciona igual, pero usa el SDK Z.ai que es más lento y tiene rate limits.
 
 ---
 
@@ -102,7 +95,7 @@ Verás logs como:
 ✓ Creating monday-ai ...
 ✓ Attaching monday-ai ...
 monday-ai  | === monday-AI Docker Startup ===
-monday-ai  | → Aplicando migraciones de Prisma al Postgres externo...
+monday-ai  | → Creando base de datos SQLite...
 monday-ai  | → Arrancando servidor Next.js en puerto 3000...
 monday-ai  | ▲ Next.js 16.1.3
 monday-ai  | - Local: http://localhost:3000
@@ -173,7 +166,7 @@ mem_limit: 4g
 
 ### **La página carga pero el chat no responde**
 - Verifica tu conexión a internet (el chat llama a APIs externas)
-- Si tienes NVIDIA Integrate API key, verifica que sea válida
+- Si tienes Groq API key, verifica que sea válida
 - Revisa los logs: `docker-compose logs -f` y busca errores `[groq]` o `[zai]`
 
 ### **Quiero resetear la base de datos**
@@ -181,7 +174,6 @@ mem_limit: 4g
 docker-compose down -v
 docker-compose up -d
 ```
-> **Nota**: Esto solo borra el volumen local `monday-ai-data` (logs, uploads). Tu Postgres externo se queda intacto. Para limpiar Postgres, usa `prisma migrate reset` contra tu DB.
 
 ### **Error: "permission denied" en docker-entrypoint.sh**
 En PowerShell:
@@ -194,18 +186,40 @@ En PowerShell:
 
 ## 📂 ¿Dónde se guardan mis datos?
 
-- **Base de datos**: En tu proveedor Postgres externo (Neon, Supabase, etc.). Persiste entre restarts y rebuilds.
-- **Archivos subidos / logs**: En el volumen Docker `monday-ai-data`. Sobreviven a restarts del contenedor.
+La base de datos SQLite se persiste en un volumen Docker llamado `monday-ai-data`. Tus boards, items, agentes y configuraciones sobreviven a restarts del contenedor.
 
 Para ver los datos desde Windows:
 ```powershell
 docker volume inspect monday-ai_monday-ai-data
 ```
 
-Para hacer backup de lo local:
+Para hacer backup:
 ```powershell
 docker run --rm -v monday-ai_monday-ai-data:/data -v ${PWD}:/backup alpine tar czf /backup/backup.tar.gz -C /data .
 ```
+
+---
+
+## 🆕 Actualizar el código
+
+Si modificas archivos del proyecto:
+
+1. **Solo código frontend** (componentes, estilos):
+   ```powershell
+   docker-compose restart
+   ```
+
+2. **Cambios en package.json o prisma/schema.prisma**:
+   ```powershell
+   docker-compose up --build -d
+   ```
+
+3. **Borrar cache completo y rebuild**:
+   ```powershell
+   docker-compose down
+   docker-compose build --no-cache
+   docker-compose up -d
+   ```
 
 ---
 
@@ -213,7 +227,7 @@ docker run --rm -v monday-ai_monday-ai-data:/data -v ${PWD}:/backup alpine tar c
 
 - **Build**: 2-4GB RAM, ~5 min
 - **Runtime**: 200-500MB RAM
-- **Disco**: ~1.5GB (imagen + datos locales)
+- **Disco**: ~1.5GB (imagen + datos)
 - **CPU**: bajo en idle, picos durante el chat IA
 
 ---

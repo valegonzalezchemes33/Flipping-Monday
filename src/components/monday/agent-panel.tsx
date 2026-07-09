@@ -12,7 +12,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import { MODEL_CATALOG } from "@/lib/model-catalog";
 import {
   Play,
   Loader2,
@@ -137,25 +136,9 @@ export function AgentPanel({ itemId }: { itemId: string }) {
                             global
                           </Badge>
                         )}
-                        {/* Model badge con color de provider */}
-                        {(() => {
-                          const info = MODEL_CATALOG.find(m => m.id === agent.model);
-                          const providerColors: Record<string,string> = {
-                            nvidia: "#76B900",
-                          };
-                          const color = info ? (providerColors[info.provider] ?? "#888") : "#888";
-                          const label = info?.name ?? agent.model;
-                          const speedIcon = info?.speed === "fast" ? "⚡" : info?.speed === "slow" ? "🧠" : "";
-                          return (
-                            <span
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5"
-                              style={{ background: `${color}18`, color }}
-                              title={info?.description}
-                            >
-                              {speedIcon}{label}
-                            </span>
-                          );
-                        })()}
+                        <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono">
+                          {agent.model}
+                        </Badge>
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
                         {agent.description}

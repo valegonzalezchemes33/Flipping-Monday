@@ -64,14 +64,14 @@ export function ItemDetailDrawer() {
     <Sheet open={!!selectedItemId} onOpenChange={(o) => !o && selectItem(null)}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-[640px] p-0 flex flex-col"
+        className="w-full sm:max-w-[640px] p-0 flex flex-col bg-white"
       >
-        <SheetHeader className="px-5 pt-4 pb-3 border-b border-border">
-          <SheetTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <SheetHeader className="px-5 pt-4 pb-3 border-b border-[#E5E8EE]">
+          <SheetTitle className="text-[11px] font-medium uppercase tracking-wider text-[#676879] flex items-center gap-1.5">
             <ChevronRight className="h-3 w-3" />
             {board.groups.find((g) => g.id === item.groupId)?.title ?? "—"}
           </SheetTitle>
-          <SheetDescription className="text-base font-semibold text-foreground mt-0.5">
+          <SheetDescription className="text-base font-semibold text-[#323338] mt-0.5">
             {item.name}
           </SheetDescription>
         </SheetHeader>
@@ -81,7 +81,7 @@ export function ItemDetailDrawer() {
           onValueChange={(v) => setTab(v as any)}
           className="flex-1 flex flex-col overflow-hidden"
         >
-          <TabsList className="justify-start rounded-none border-b border-border bg-transparent h-auto p-0 px-3 gap-0">
+          <TabsList className="justify-start rounded-none border-b border-[#E5E8EE] bg-transparent h-auto p-0 px-3 gap-0">
             <DetailTabTrigger value="updates" icon={<MessageSquare className="h-3.5 w-3.5" />} label="Updates" />
             <DetailTabTrigger value="activity" icon={<Activity className="h-3.5 w-3.5" />} label="Activity" />
             <DetailTabTrigger value="files" icon={<Paperclip className="h-3.5 w-3.5" />} label="Files" />
@@ -169,210 +169,6 @@ function DetailTabTrigger({
   );
 }
 
-// ============================================================================
-// RichTextEditor — componente de contentEditable con formato básico
-// ============================================================================
-function RichTextEditor({
-  value,
-  onChange,
-  placeholder,
-  minHeight = "60px",
-  autoFocus,
-}: {
-  value: string;
-  onChange: (html: string) => void;
-  placeholder?: string;
-  minHeight?: string;
-  autoFocus?: boolean;
-}) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [mentionStart, setMentionStart] = useState(0);
-  const users = useAppStore((s) => s.users);
-
-  useEffect(() => {
-    if (autoFocus && editorRef.current) {
-      editorRef.current.focus();
-    }
-  }, [autoFocus]);
-
-  // Set initial HTML
-  useEffect(() => {
-    if (editorRef.current && !editorRef.current.innerHTML) {
-      editorRef.current.innerHTML = value;
-    }
-  }, []);
-
-  const mentionMatches = useMemo(() => {
-    if (mentionQuery === null) return [];
-    const q = mentionQuery.toLowerCase();
-    return users
-      .filter((u) => u.name.toLowerCase().includes(q))
-      .slice(0, 5);
-  }, [mentionQuery, users]);
-
-  const exec = (cmd: string, val?: string) => {
-    document.execCommand(cmd, false, val);
-    editorRef.current?.focus();
-    if (onChange) {
-      onChange(editorRef.current?.innerHTML ?? "");
-    }
-  };
-
-  const handleInput = () => {
-    const html = editorRef.current?.innerHTML ?? "";
-    onChange(html);
-
-    // Detectar @mention en el texto plano
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      const textBefore = range.startContainer.textContent?.slice(0, range.startOffset) ?? "";
-      const atMatch = textBefore.match(/@(\w*)$/);
-      if (atMatch) {
-        setMentionQuery(atMatch[1]);
-        setMentionStart(range.startOffset - atMatch[0].length);
-        setShowMentions(true);
-      } else {
-        setMentionQuery(null);
-        setShowMentions(false);
-      }
-    }
-  };
-
-  const insertMention = (user: { id: string; name: string }) => {
-    if (!editorRef.current) return;
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    // Replace the @mention text
-    const textNode = range.startContainer;
-    const fullText = textNode.textContent ?? "";
-    const before = fullText.slice(0, mentionStart);
-    const after = fullText.slice(mentionStart + (mentionQuery?.length ?? 0) + 1);
-    const newName = `@${user.name.split(" ")[0]}`;
-    textNode.textContent = before + newName + " " + after;
-    setShowMentions(false);
-    setMentionQuery(null);
-    onChange(editorRef.current?.innerHTML ?? "");
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // ⌘B / Ctrl+B for bold
-    if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-      e.preventDefault();
-      exec("bold");
-    }
-    // ⌘I / Ctrl+I for italic
-    if ((e.metaKey || e.ctrlKey) && e.key === "i") {
-      e.preventDefault();
-      exec("italic");
-    }
-    // ⌘U / Ctrl+U for underline
-    if ((e.metaKey || e.ctrlKey) && e.key === "u") {
-      e.preventDefault();
-      exec("underline");
-    }
-  };
-
-  return (
-    <div className="relative">
-      {/* Formatting toolbar */}
-      <div className="flex items-center gap-0.5 pb-1 border-b border-border/50 mb-1">
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("bold"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-xs font-bold text-muted-foreground hover:text-foreground"
-          title="Negrita (⌘B)"
-        >
-          <b>B</b>
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("italic"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-xs italic text-muted-foreground hover:text-foreground"
-          title="Cursiva (⌘I)"
-        >
-          <i>I</i>
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("underline"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-xs underline text-muted-foreground hover:text-foreground"
-          title="Subrayado (⌘U)"
-        >
-          <u>U</u>
-        </button>
-        <span className="w-px h-4 bg-border mx-1" />
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("insertUnorderedList"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-xs text-muted-foreground hover:text-foreground"
-          title="Lista"
-        >
-          •≡
-        </button>
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("insertOrderedList"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-xs text-muted-foreground hover:text-foreground"
-          title="Lista numerada"
-        >
-          1.
-        </button>
-        <span className="w-px h-4 bg-border mx-1" />
-        <button
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); exec("formatBlock", "<p>"); }}
-          className="w-7 h-7 flex items-center justify-center rounded hover:bg-secondary text-[10px] text-muted-foreground hover:text-foreground"
-          title="Párrafo"
-        >
-          ¶
-        </button>
-      </div>
-
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        data-placeholder={placeholder}
-        className="w-full resize-none text-sm focus:outline-none min-h-[60px] prose prose-sm dark:prose-invert max-w-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/40"
-        style={{ minHeight }}
-      />
-
-      {/* Mention autocomplete popover */}
-      {showMentions && mentionMatches.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
-          <div className="px-2 py-1 text-[9px] uppercase font-bold text-muted-foreground bg-secondary/50">
-            Mencionar
-          </div>
-          {mentionMatches.map((u) => (
-            <button
-              key={u.id}
-              onClick={() => insertMention(u)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-secondary text-left text-xs"
-            >
-              <Avatar className="h-5 w-5">
-                <AvatarFallback
-                  style={{ background: u.color }}
-                  className="text-white text-[9px] font-semibold"
-                >
-                  {u.name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
-                </AvatarFallback>
-              </Avatar>
-              <span className="flex-1 truncate">{u.name}</span>
-              <span className="text-[10px] text-muted-foreground truncate">{u.email}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ----------------------------------------------------------------------------
 function UpdatesTab({ itemId }: { itemId: string }) {
   const allUpdates = useAppStore((s) => s.updates);
@@ -384,44 +180,98 @@ function UpdatesTab({ itemId }: { itemId: string }) {
   const currentUser = useAppStore((s) => s.currentUserId);
   const addUpdate = useAppStore((s) => s.addUpdate);
   const [draft, setDraft] = useState("");
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState(0);
 
   const me = users.find((u) => u.id === currentUser);
 
-  const handleSend = () => {
-    const plain = draft.replace(/<[^>]*>/g, "").trim();
-    if (!plain) return;
-    // Guardar como HTML si tiene formato, si no como texto plano
-    const isFormatted = draft.includes("<b>") || draft.includes("<i>") || draft.includes("<u>") ||
-      draft.includes("<ul>") || draft.includes("<ol>") || draft.includes("</p><p>");
-    addUpdate(itemId, isFormatted ? draft : plain);
-    setDraft("");
+  // Filtrar users para mention autocomplete
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return users
+      .filter((u) => u.name.toLowerCase().includes(q))
+      .slice(0, 5);
+  }, [mentionQuery, users]);
+
+  const handleDraftChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setDraft(val);
+    // Detectar @mention
+    const cursorPos = e.target.selectionStart;
+    const before = val.slice(0, cursorPos);
+    const atMatch = before.match(/@(\w*)$/);
+    if (atMatch) {
+      setMentionQuery(atMatch[1]);
+      setMentionStart(cursorPos - atMatch[0].length);
+    } else {
+      setMentionQuery(null);
+    }
   };
 
-  const hasContent = draft.replace(/<[^>]*>/g, "").trim().length > 0;
+  const insertMention = (user: { id: string; name: string }) => {
+    const before = draft.slice(0, mentionStart);
+    const after = draft.slice(mentionStart + (mentionQuery?.length ?? 0) + 1);
+    const newName = `@${user.name.split(" ")[0]}`;
+    setDraft(`${before}${newName} ${after}`);
+    setMentionQuery(null);
+  };
+
+  const handleSend = () => {
+    if (!draft.trim()) return;
+    addUpdate(itemId, draft.trim());
+    setDraft("");
+  };
 
   return (
     <div className="space-y-3">
       {/* Composer */}
       <div className="border border-border rounded-lg p-2 bg-card relative">
-        <RichTextEditor
+        <Textarea
           value={draft}
-          onChange={setDraft}
+          onChange={handleDraftChange}
           placeholder="Escribe un update… Usa @ para mencionar. Los agentes ejecutados aquí también aparecerán."
-          autoFocus
+          className="border-0 resize-none min-h-[60px] text-sm focus-visible:ring-0"
         />
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50 px-0">
+        {/* Mention autocomplete popover */}
+        {mentionQuery !== null && mentionMatches.length > 0 && (
+          <div className="absolute z-50 left-2 right-2 mt-1 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
+            <div className="px-2 py-1 text-[9px] uppercase font-bold text-muted-foreground bg-secondary/50">
+              Mencionar
+            </div>
+            {mentionMatches.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => insertMention(u)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-secondary text-left text-xs"
+              >
+                <Avatar className="h-5 w-5">
+                  <AvatarFallback
+                    style={{ background: u.color }}
+                    className="text-white text-[9px] font-semibold"
+                  >
+                    {u.name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="flex-1 truncate">{u.name}</span>
+                <span className="text-[10px] text-muted-foreground truncate">{u.email}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between mt-1 px-1">
           <div className="flex items-center gap-1 text-muted-foreground">
             <Paperclip className="h-3.5 w-3.5 cursor-pointer hover:text-foreground" />
             <span className="text-[11px]">@ mencionar</span>
           </div>
-          <Button size="sm" className="h-7 text-xs bg-[#0072E5] hover:bg-[#0058B5] text-white" onClick={handleSend} disabled={!hasContent}>
+          <Button size="sm" className="h-7 text-xs bg-[#0072E5] hover:bg-[#0058B5] text-white" onClick={handleSend} disabled={!draft.trim()}>
             <Send className="h-3 w-3 mr-1" />
             Update
           </Button>
         </div>
       </div>
 
-      {/* Updates list — renderizar HTML */}
+      {/* Updates list */}
       <div className="space-y-3">
         {updates.length === 0 && (
           <div className="text-center text-xs text-muted-foreground py-8">
@@ -431,8 +281,6 @@ function UpdatesTab({ itemId }: { itemId: string }) {
         {updates.map((upd) => {
           const author = users.find((u) => u.id === upd.authorId);
           const isAgent = upd.body.startsWith("🤖");
-          const isHtml = upd.body.includes("<b>") || upd.body.includes("<i>") || upd.body.includes("<u>") ||
-            upd.body.includes("<ul>") || upd.body.includes("<ol>");
           return (
             <div key={upd.id} className="flex gap-2">
               <Avatar className="h-7 w-7 shrink-0">
@@ -457,18 +305,11 @@ function UpdatesTab({ itemId }: { itemId: string }) {
                   className={cn(
                     "mt-1 text-sm rounded-lg p-2.5",
                     isAgent
-                      ? "bg-[#0072E5]/5 border border-[#0072E5]/20 text-foreground"
+                      ? "bg-[#0072E5]/5 border border-[#0072E5]/20 text-foreground whitespace-pre-wrap"
                       : "bg-secondary/60 text-foreground"
                   )}
                 >
-                  {isHtml ? (
-                    <div
-                      className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
-                      dangerouslySetInnerHTML={{ __html: upd.body }}
-                    />
-                  ) : (
-                    <div className="whitespace-pre-wrap">{upd.body}</div>
-                  )}
+                  {upd.body}
                 </div>
               </div>
             </div>

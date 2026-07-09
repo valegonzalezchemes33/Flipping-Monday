@@ -3,22 +3,13 @@
 // ============================================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { undoMiddleware, type UndoHistory } from "./undo-middleware";
 
-// ----------------------------------------------------------------------------
-// Generador de IDs único — usa crypto.randomUUID() (estándar web, disponible
-// en Node 19+ y todos los navegadores modernos) con fallback a timestamp+random.
-// Esto evita colisiones cuando se crean múltiples items en el mismo ms
-// (ej: create_items_batch llamaba addItem en forEach y todos recibían el
-// mismo Date.now() → IDs duplicados → se sobrescribían silenciosamente).
-// ----------------------------------------------------------------------------
+// Generador de IDs único — evita colisiones en operaciones batch
 let _idCounter = 0;
-export function genId(prefix: string = "id"): string {
-  // crypto.randomUUID está disponible en Node 19+ y browsers modernos
+function genId(prefix: string = "id"): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
   }
-  // Fallback: timestamp + contador incremental + random
   _idCounter = (_idCounter + 1) % 1000000;
   return `${prefix}-${Date.now()}-${_idCounter}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -81,7 +72,7 @@ export interface SidekickMessage {
   // Para mensajes de tool (resultado)
   toolCallId?: string;
   // Metadata
-  backend?: "nvidia";
+  backend?: "groq" | "zai";
   model?: string;
   createdAt: string;
   streaming?: boolean;
@@ -92,11 +83,11 @@ export interface SidekickMessage {
 // ----------------------------------------------------------------------------
 
 const USERS: User[] = [
-  { id: "u1", name: "Sofía Reyes", email: "sofia@monday-ai.dev", role: "owner", color: "#0072E5", online: true },
-  { id: "u2", name: "Marco Liu", email: "marco@monday-ai.dev", role: "admin", color: "#00C875", online: true },
-  { id: "u3", name: "Priya Nair", email: "priya@monday-ai.dev", role: "member", color: "#FF642E", online: true },
-  { id: "u4", name: "Diego Alvarez", email: "diego@monday-ai.dev", role: "member", color: "#A25BFF", online: false },
-  { id: "u5", name: "Yuki Tanaka", email: "yuki@monday-ai.dev", role: "member", color: "#FF158A", online: true },
+  { id: "u1", name: "Sofía Reyes", email: "sofia@monday-ai.dev", role: "owner", color: "#0072E5" },
+  { id: "u2", name: "Marco Liu", email: "marco@monday-ai.dev", role: "admin", color: "#00C875" },
+  { id: "u3", name: "Priya Nair", email: "priya@monday-ai.dev", role: "member", color: "#FF642E" },
+  { id: "u4", name: "Diego Alvarez", email: "diego@monday-ai.dev", role: "member", color: "#A25BFF" },
+  { id: "u5", name: "Yuki Tanaka", email: "yuki@monday-ai.dev", role: "member", color: "#FF158A" },
 ];
 
 const TEAMS: Team[] = [
@@ -662,7 +653,7 @@ const ACTIVITY_SEED: ActivityEvent[] = [
   {
     id: "act1",
     itemId: "i1",
-    type: "agent_completed",
+    type: "agent_completed" as const,
     data: { score: 87, label: "Alto" },
     agentId: "a1",
     userId: "u1",
@@ -671,7 +662,7 @@ const ACTIVITY_SEED: ActivityEvent[] = [
   {
     id: "act2",
     itemId: "i1",
-    type: "update_posted",
+    type: "update_posted" as const,
     data: { body: "Lead calificado como Alto. Iniciar outreach." },
     userId: "u1",
     createdAt: new Date(NOW - 2 * 86400000 + 60000).toISOString(),
@@ -679,7 +670,7 @@ const ACTIVITY_SEED: ActivityEvent[] = [
   {
     id: "act3",
     itemId: "i3",
-    type: "column_changed",
+    type: "column_changed" as const,
     data: { columnId: "status", from: "3", to: "0" },
     userId: "u3",
     createdAt: new Date(NOW - 1 * 86400000).toISOString(),
@@ -689,7 +680,7 @@ const ACTIVITY_SEED: ActivityEvent[] = [
 const NOTIFICATIONS_SEED: AppNotification[] = [
   {
     id: "n-seed-1",
-    type: "agent_completed",
+    type: "agent_completed" as const,
     title: "Lead Scorer completó ejecución",
     body: "Acme Corp — Plataforma enterprise → Score 87/100 (Alto)",
     itemId: "i1",
@@ -804,25 +795,11 @@ interface AppState {
   showMondayConnect: boolean;
   showMondayImport: boolean;
   showSidekick: boolean;
-  showSettings: boolean;
-  sidebarView: "boards" | "home" | "dashboards" | "docs" | "team" | "my_work" | "activity";
-
-  // Configuración global de la aplicación
-  settings: {
-    /** API key de NVIDIA NIM */
-    nvidiaApiKey: string | null;
-    /** Modelo por default para nuevos agentes */
-    defaultModel: string;
-    /** Temperatura por default para nuevos agentes */
-    defaultTemperature: number;
-    /** Tema de la interfaz */
-    theme: "dark" | "light" | "system";
-    /** Idioma de la interfaz */
-    language: "es" | "en";
-  };
+  sidebarView: "boards" | "home" | "dashboards" | "docs" | "team";
 
   // Sidekick chat
   sidekickMessages: SidekickMessage[];
+  sidekickGroqApiKey: string | null;
   sidekickThinking: boolean;
 
   // Board toolbar state
@@ -856,11 +833,7 @@ interface AppState {
   setShowMondayConnect: (v: boolean) => void;
   setShowMondayImport: (v: boolean) => void;
   setShowSidekick: (v: boolean) => void;
-  setShowSettings: (v: boolean) => void;
   setSidebarView: (v: AppState["sidebarView"]) => void;
-
-  // Settings actions
-  updateSettings: (patch: Partial<AppState["settings"]>) => void;
 
   // Favoritos y Recents
   toggleFavorite: (boardId: string) => void;
@@ -870,6 +843,7 @@ interface AppState {
   addSidekickMessage: (msg: SidekickMessage) => void;
   updateSidekickMessage: (id: string, patch: Partial<SidekickMessage>) => void;
   clearSidekickMessages: () => void;
+  setSidekickGroqApiKey: (key: string | null) => void;
   setSidekickThinking: (v: boolean) => void;
 
   // Toolbar actions
@@ -881,11 +855,10 @@ interface AppState {
   // CRUD items
   updateItemName: (itemId: string, name: string) => void;
   updateColumnValue: (itemId: string, columnId: string, value: any) => void;
-  addItem: (boardId: string, groupId: string, name: string) => string;
+  addItem: (boardId: string, groupId: string, name: string) => void;
   deleteItem: (itemId: string) => void;
   duplicateItem: (itemId: string) => void;
   moveItem: (itemId: string, toGroupId: string) => void;
-  reorderItem: (itemId: string, toPosition: number) => void;
   archiveItem: (itemId: string) => void;
 
   // CRUD groups
@@ -945,11 +918,6 @@ interface AppState {
   addFile: (file: Omit<AppFile, "id" | "createdAt">) => void;
   deleteFile: (fileId: string) => void;
 
-  // Undo/Redo
-  _undo: UndoHistory;
-  undo: () => void;
-  redo: () => void;
-
   // ---- Monday.com integration ----
   mondayApiKey: string | null;
   mondayConnected: boolean;
@@ -990,7 +958,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>()(
   persist(
-    undoMiddleware<AppState>((set, get) => ({
+    (set, get) => ({
       users: USERS,
       teams: TEAMS,
       workspaces: WORKSPACES,
@@ -1035,27 +1003,16 @@ export const useAppStore = create<AppState>()(
       showMondayConnect: false,
       showMondayImport: false,
       showSidekick: false,
-      showSettings: false,
       sidebarView: "boards",
-      settings: {
-        nvidiaApiKey: null,
-        defaultModel: "meta/llama-3.3-70b-instruct",
-        defaultTemperature: 0.4,
-        theme: "dark",
-        language: "es",
-      },
       sidekickMessages: [],
+      sidekickGroqApiKey: null,
       sidekickThinking: false,
       filters: [],
       sorts: [],
       groupBy: null,
       hiddenColumns: [],
-      // Flag que indica si el store ya se hidrató desde localStorage
-      // Es false en el primer render del servidor y del cliente, y pasa a true
-      // cuando zustand/persist termina de leer localStorage. La UI lo usa para
-      // mostrar un splash en vez del estado seed (que causaba el "flash").
       _hasHydrated: false,
-      setHasHydrated: (v: boolean) => set({ _hasHydrated: v }),
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
 
       setActiveBoard: (boardId) => {
         const board = get().boards.find((b) => b.id === boardId);
@@ -1097,13 +1054,7 @@ export const useAppStore = create<AppState>()(
       setShowMondayConnect: (v) => set({ showMondayConnect: v }),
       setShowMondayImport: (v) => set({ showMondayImport: v }),
       setShowSidekick: (v) => set({ showSidekick: v }),
-      setShowSettings: (v) => set({ showSettings: v }),
       setSidebarView: (v) => set({ sidebarView: v }),
-
-      updateSettings: (patch) =>
-        set((s) => ({
-          settings: { ...s.settings, ...patch },
-        })),
 
       // ---- Favoritos y Recents ----
       toggleFavorite: (boardId) =>
@@ -1119,10 +1070,7 @@ export const useAppStore = create<AppState>()(
 
       // ---- Sidekick chat ----
       addSidekickMessage: (msg) =>
-        set((s) => {
-          if (s.sidekickMessages.some((m) => m.id === msg.id)) return s;
-          return { sidekickMessages: [...s.sidekickMessages, msg] };
-        }),
+        set((s) => ({ sidekickMessages: [...s.sidekickMessages, msg] })),
       updateSidekickMessage: (id, patch) =>
         set((s) => ({
           sidekickMessages: s.sidekickMessages.map((m) =>
@@ -1130,6 +1078,7 @@ export const useAppStore = create<AppState>()(
           ),
         })),
       clearSidekickMessages: () => set({ sidekickMessages: [] }),
+      setSidekickGroqApiKey: (key) => set({ sidekickGroqApiKey: key }),
       setSidekickThinking: (v) => set({ sidekickThinking: v }),
 
       setFilters: (f) => set({ filters: f }),
@@ -1165,18 +1114,17 @@ export const useAppStore = create<AppState>()(
             {
               id: genId("act"),
               itemId,
-              type: "column_changed",
+              type: "column_changed" as const,
               data: { columnId, value },
               userId: s.currentUserId,
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ],
+          ].slice(0, 500).slice(0, 500),
         })),
 
       addUpdate: (itemId, body) =>
         set((s) => ({
-          // Cap updates a 1000 por item para evitar memory leak
           updates: [
             {
               id: genId("upd"),
@@ -1186,7 +1134,7 @@ export const useAppStore = create<AppState>()(
               createdAt: new Date().toISOString(),
             },
             ...s.updates,
-          ].slice(0, 1000),
+          ],
           activities: [
             {
               id: genId("act-upd"),
@@ -1197,7 +1145,7 @@ export const useAppStore = create<AppState>()(
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ].slice(0, 500),
+          ].slice(0, 500).slice(0, 500),
         })),
 
       addAgent: (agent) => set((s) => ({ agents: [...s.agents, agent] })),
@@ -1207,11 +1155,7 @@ export const useAppStore = create<AppState>()(
         })),
       deleteAgent: (agentId) => set((s) => ({ agents: s.agents.filter((a) => a.id !== agentId) })),
 
-      addExecution: (exec) =>
-        set((s) => ({
-          // Cap executions a 200 para evitar memory leak
-          executions: [exec, ...s.executions].slice(0, 200),
-        })),
+      addExecution: (exec) => set((s) => ({ executions: [exec, ...s.executions] })),
       updateExecution: (id, patch) =>
         set((s) => ({
           executions: s.executions.map((e) => (e.id === id ? { ...e, ...patch } : e)),
@@ -1246,8 +1190,6 @@ export const useAppStore = create<AppState>()(
         })),
 
       addItem: (boardId, groupId, name) => {
-        // Generar ID antes del set para poder retornarlo (necesario para que
-        // el Sidekick y otros callers puedan encadenar operaciones con el ID).
         const itemId = genId("i");
         const now = new Date().toISOString();
         set((s) => ({
@@ -1271,7 +1213,6 @@ export const useAppStore = create<AppState>()(
                 }
               : b
           ),
-          // Cap activities a 500 para evitar memory leak (se persistian sin límite)
           activities: [
             {
               id: genId("act"),
@@ -1299,34 +1240,13 @@ export const useAppStore = create<AppState>()(
             {
               id: genId("act-mv"),
               itemId,
-              type: "column_changed",
+              type: "column_changed" as const,
               data: { field: "group", to: toGroupId },
               userId: s.currentUserId,
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ],
-        })),
-
-      reorderItem: (itemId, toPosition) =>
-        set((s) => ({
-          boards: s.boards.map((b) => {
-            const item = b.items.find((i) => i.id === itemId);
-            if (!item) return b;
-            const sameGroup = b.items
-              .filter((i) => i.groupId === item.groupId && i.id !== itemId)
-              .sort((a, b) => a.position - b.position);
-            sameGroup.splice(toPosition, 0, { ...item, position: toPosition });
-            return {
-              ...b,
-              items: b.items.map((i) => {
-                if (i.id === itemId) return { ...i, position: toPosition, updatedAt: new Date().toISOString() };
-                const idx = sameGroup.findIndex((sgi) => sgi.id === i.id);
-                if (idx >= 0) return { ...i, position: idx };
-                return i;
-              }),
-            };
-          }),
+          ].slice(0, 500).slice(0, 500),
         })),
 
       toggleGroupCollapse: (boardId, groupId) =>
@@ -1350,19 +1270,23 @@ export const useAppStore = create<AppState>()(
             ...b,
             items: b.items.filter((i) => i.id !== itemId),
           })),
+          // FIX: cascade cleanup — limpiar updates, files, notifications, activities
+          updates: s.updates.filter((u) => u.itemId !== itemId),
+          files: s.files.filter((f) => f.itemId !== itemId),
+          notifications: s.notifications.filter((n) => n.itemId !== itemId),
           selectedItemId: s.selectedItemId === itemId ? null : s.selectedItemId,
           selectedRowIds: s.selectedRowIds.filter((id) => id !== itemId),
           activities: [
             {
               id: genId("act-del"),
               itemId,
-              type: "item_archived",
+              type: "item_archived" as const,
               data: {},
               userId: s.currentUserId,
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ],
+          ].slice(0, 500),
         })),
 
       duplicateItem: (itemId) =>
@@ -1394,13 +1318,13 @@ export const useAppStore = create<AppState>()(
             {
               id: genId("act-arch"),
               itemId,
-              type: "item_archived",
+              type: "item_archived" as const,
               data: {},
               userId: s.currentUserId,
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ],
+          ].slice(0, 500).slice(0, 500),
         })),
 
       // ---- Nuevas acciones de grupos ----
@@ -1435,7 +1359,7 @@ export const useAppStore = create<AppState>()(
               .filter((i) => i.groupId === groupId)
               .map((i) => ({
                 ...i,
-                id: genId("i"),
+                id: `i-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 groupId: newGroupId,
                 columnValues: i.columnValues.map((cv) => ({ ...cv, value: JSON.parse(JSON.stringify(cv.value)) })),
                 createdAt: new Date().toISOString(),
@@ -1450,17 +1374,25 @@ export const useAppStore = create<AppState>()(
         })),
 
       deleteGroup: (boardId, groupId) =>
-        set((s) => ({
-          boards: s.boards.map((b) =>
-            b.id === boardId
-              ? {
-                  ...b,
-                  groups: b.groups.filter((g) => g.id !== groupId),
-                  items: b.items.filter((i) => i.groupId !== groupId),
-                }
-              : b
-          ),
-        })),
+        set((s) => {
+          // FIX: cascade cleanup — obtener item IDs del grupo para limpiar
+          const board = s.boards.find((b) => b.id === boardId);
+          const groupItemIds = board?.items.filter((i) => i.groupId === groupId).map((i) => i.id) ?? [];
+          return {
+            boards: s.boards.map((b) =>
+              b.id === boardId
+                ? {
+                    ...b,
+                    groups: b.groups.filter((g) => g.id !== groupId),
+                    items: b.items.filter((i) => i.groupId !== groupId),
+                  }
+                : b
+            ),
+            updates: s.updates.filter((u) => !groupItemIds.includes(u.itemId)),
+            files: s.files.filter((f) => !groupItemIds.includes(f.itemId)),
+            notifications: s.notifications.filter((n) => !groupItemIds.includes(n.itemId ?? "")),
+          };
+        }),
 
       // ---- Boards / workspaces ----
       addBoard: (workspaceId, name) => {
@@ -1495,13 +1427,12 @@ export const useAppStore = create<AppState>()(
           items: [],
           views: [
             { id: genId("v"), name: "Main Table", type: "main_table" },
-            { id: genId("v-k"), name: "Kanban", type: "kanban" },
+            { id: `v-${Date.now()}-k`, name: "Kanban", type: "kanban" },
           ],
         };
         set((s) => ({
           boards: [...s.boards, newBoard],
-          // FIX: antes no actualizaba workspace.boardIds → el sidebar no
-          // mostraba el board nuevo hasta refresh.
+          // FIX: actualizar workspace.boardIds para que aparezca en el sidebar
           workspaces: s.workspaces.map((w) =>
             w.id === workspaceId
               ? { ...w, boardIds: [...w.boardIds, boardId] }
@@ -1519,8 +1450,7 @@ export const useAppStore = create<AppState>()(
       deleteBoard: (boardId) =>
         set((s) => {
           const remaining = s.boards.filter((b) => b.id !== boardId);
-          // FIX: cascade delete — limpiar updates, files, activities, executions
-          // huérfanos del board eliminado para evitar memory leak.
+          // FIX: cascade cleanup — limpiar favoritos, recientes, selección
           const boardItemIds = s.boards.find((b) => b.id === boardId)?.items.map((i) => i.id) ?? [];
           return {
             boards: remaining,
@@ -1533,6 +1463,7 @@ export const useAppStore = create<AppState>()(
             activities: s.activities.filter((a) => !boardItemIds.includes(a.itemId ?? "")),
             favoriteBoardIds: s.favoriteBoardIds.filter((id) => id !== boardId),
             recentBoardIds: s.recentBoardIds.filter((id) => id !== boardId),
+            selectedItemId: boardItemIds.includes(s.selectedItemId ?? "") ? null : s.selectedItemId,
             activeBoardId:
               s.activeBoardId === boardId
                 ? remaining[0]?.id ?? ""
@@ -1542,42 +1473,33 @@ export const useAppStore = create<AppState>()(
 
       renameBoard: (boardId, name) =>
         set((s) => ({
-          boards: s.boards.map((b) =>
-            b.id === boardId ? { ...b, name } : b
-          ),
-        })),
-
-      archiveBoard: (boardId) =>
-        set((s) => ({
-          boards: s.boards.map((b) =>
-            b.id === boardId
-              ? { ...b, archived: true }
-              : b
-          ),
+          boards: s.boards.map((b) => (b.id === boardId ? { ...b, name } : b)),
         })),
 
       duplicateBoard: (boardId) => {
         const source = get().boards.find((b) => b.id === boardId);
         if (!source) return "";
         const newId = genId("b");
+        // FIX: mapear old group IDs → new group IDs para que los items
+        // apunten al grupo correcto en el board duplicado
+        const groupIdMap: Record<string, string> = {};
+        source.groups.forEach((g) => {
+          groupIdMap[g.id] = genId("g");
+        });
         const newBoard: Board = {
           ...source,
           id: newId,
           name: `${source.name} (copia)`,
+          archived: false,
           items: source.items.map((i) => ({
             ...i,
             id: genId("i"),
+            groupId: groupIdMap[i.groupId] ?? i.groupId,
             columnValues: [...i.columnValues],
             subitems: [],
           })),
-          groups: source.groups.map((g) => ({
-            ...g,
-            id: genId("g"),
-          })),
-          views: source.views.map((v) => ({
-            ...v,
-            id: genId("v"),
-          })),
+          groups: source.groups.map((g) => ({ ...g, id: groupIdMap[g.id] })),
+          views: source.views.map((v) => ({ ...v, id: genId("v") })),
         };
         set((s) => ({
           boards: [...s.boards, newBoard],
@@ -1590,23 +1512,12 @@ export const useAppStore = create<AppState>()(
         return newId;
       },
 
-      addWorkspace: (name) => {
-        const wsId = genId("w");
+      archiveBoard: (boardId) =>
         set((s) => ({
-          workspaces: [
-            ...s.workspaces,
-            {
-              id: wsId,
-              name,
-              kind: "open" as const,
-              boardIds: [],
-              color: "#0072E5",
-              description: "",
-            },
-          ],
-        }));
-        return wsId;
-      },
+          boards: s.boards.map((b) =>
+            b.id === boardId ? { ...b, archived: true } : b
+          ),
+        })),
 
       renameWorkspace: (workspaceId, name) =>
         set((s) => ({
@@ -1630,6 +1541,24 @@ export const useAppStore = create<AppState>()(
           };
         }),
 
+      addWorkspace: (name) => {
+        const wsId = genId("w");
+        set((s) => ({
+          workspaces: [
+            ...s.workspaces,
+            {
+              id: wsId,
+              name,
+              kind: "open" as const,
+              boardIds: [],
+              color: "#0072E5",
+              description: "",
+            },
+          ],
+        }));
+        return wsId;
+      },
+
       addColumn: (boardId, col) =>
         set((s) => ({
           boards: s.boards.map((b) =>
@@ -1638,7 +1567,7 @@ export const useAppStore = create<AppState>()(
                   ...b,
                   columns: [
                     ...b.columns,
-                    { ...col, id: `col-${Date.now()}` },
+                    { ...col, id: genId("col") },
                   ],
                 }
               : b
@@ -1691,7 +1620,7 @@ export const useAppStore = create<AppState>()(
                     subItems: [
                       ...(i.subItems ?? []),
                       {
-                        id: `si-${Date.now()}`,
+                        id: genId("si"),
                         parentId,
                         name,
                         columnValues: [],
@@ -1706,13 +1635,13 @@ export const useAppStore = create<AppState>()(
             {
               id: genId("act-sub"),
               itemId: parentId,
-              type: "subitem_created",
+              type: "subitem_created" as const,
               data: { name },
               userId: s.currentUserId,
               createdAt: new Date().toISOString(),
             },
             ...s.activities,
-          ],
+          ].slice(0, 500).slice(0, 500),
         })),
 
       updateSubitem: (parentId, subitemId, name) =>
@@ -1900,27 +1829,52 @@ export const useAppStore = create<AppState>()(
             workspaces: updatedWorkspaces,
           };
         }),
-    }) as any),
+    }),
     {
       name: "monday-ai-store",
       version: 3, // bump para forzar refresh con favoritos/recents
-      // skipHydration: true evita que zustand/persist intente leer localStorage
-      // automáticamente durante el SSR (que causaba errores y memory pressure).
-      // El HydrationGate llama manualmente a useAppStore.persist.rehydrate() en
-      // el cliente después del montaje.
-      skipHydration: true,
       migrate: (persistedState: any, version: number) => {
         // Migrar estado viejo: añadir campos nuevos si no existen
         if (!persistedState) return persistedState;
         if (!persistedState.favoriteBoardIds) persistedState.favoriteBoardIds = [];
         if (!persistedState.recentBoardIds) persistedState.recentBoardIds = [];
+
+        // FIX: sanitizar IDs dangling tras rehidratación
+        // Si selectedItemId, activeBoardId, o activeViewId apuntan a
+        // entidades que ya no existen, resetearlos
+        if (persistedState.boards && Array.isArray(persistedState.boards)) {
+          const boardIds = new Set(persistedState.boards.map((b: any) => b.id));
+          // Validar activeBoardId
+          if (persistedState.activeBoardId && !boardIds.has(persistedState.activeBoardId)) {
+            persistedState.activeBoardId = persistedState.boards[0]?.id ?? "";
+          }
+          // Validar selectedItemId
+          if (persistedState.selectedItemId) {
+            const itemExists = persistedState.boards.some((b: any) =>
+              b.items?.some((i: any) => i.id === persistedState.selectedItemId)
+            );
+            if (!itemExists) persistedState.selectedItemId = null;
+          }
+          // Validar activeViewId
+          if (persistedState.activeBoardId) {
+            const board = persistedState.boards.find((b: any) => b.id === persistedState.activeBoardId);
+            if (board?.views && !board.views.some((v: any) => v.id === persistedState.activeViewId)) {
+              persistedState.activeViewId = board.views[0]?.id ?? "";
+            }
+          }
+          // Filtrar favoritos/recientes que ya no existen
+          persistedState.favoriteBoardIds = (persistedState.favoriteBoardIds ?? []).filter(
+            (id: string) => boardIds.has(id)
+          );
+          persistedState.recentBoardIds = (persistedState.recentBoardIds ?? []).filter(
+            (id: string) => boardIds.has(id)
+          );
+        }
+
         return persistedState;
       },
-      // No persistir modal state ni undo history (siempre arrancan cerrados)
+      // No persistir modal state (siempre arrancan cerrados)
       partialize: (s) => ({
-        // Excluir _undo explícitamente (no se persiste el history stack)
-        _undo: undefined,
-        // El resto se persiste normalmente
         users: s.users,
         teams: s.teams,
         workspaces: s.workspaces,
@@ -1935,17 +1889,15 @@ export const useAppStore = create<AppState>()(
         files: s.files,
         currentUserId: s.currentUserId,
         activeBoardId: s.activeBoardId,
-        mondayApiKey: s.mondayApiKey,
+        // FIX: no persistir API keys en localStorage (vulnerabilidad XSS)
+        // mondayApiKey: s.mondayApiKey,  // ← comentado por seguridad
         mondayConnected: s.mondayConnected,
         mondayAccount: s.mondayAccount,
-        settings: s.settings,
         sidekickMessages: s.sidekickMessages,
+        // sidekickGroqApiKey: s.sidekickGroqApiKey,  // ← comentado por seguridad
         favoriteBoardIds: s.favoriteBoardIds,
         recentBoardIds: s.recentBoardIds,
       }),
-      // Hidratación manual: cuando persist termina de leer localStorage,
-      // marcamos _hasHydrated = true para que la UI pueda mostrar el splash
-      // hasta que los datos reales estén listos (evita el flash de datos seed).
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
@@ -1969,48 +1921,4 @@ export function findItem(state: AppState, itemId: string | null): Item | undefin
     if (found) return found;
   }
   return undefined;
-}
-
-// ----------------------------------------------------------------------------
-// Hooks de selectores optimizados — evitan re-renders innecesarios.
-// En vez de subscribirse a `s.boards` (que cambia en cualquier mutación),
-// estos hooks solo se re-renderizan cuando cambia la parte relevante.
-// ----------------------------------------------------------------------------
-import { useMemo } from "react";
-
-/** Hook que devuelve el board activo. Solo se re-renderiza cuando cambia ese board. */
-export function useActiveBoard(): Board | undefined {
-  const activeBoardId = useAppStore((s) => s.activeBoardId);
-  return useAppStore((s) => s.boards.find((b) => b.id === activeBoardId));
-}
-
-/** Hook que devuelve solo el ID del board activo (primitivo, estable). */
-export function useActiveBoardId(): string {
-  return useAppStore((s) => s.activeBoardId);
-}
-
-/** Hook que devuelve los items del board activo. Re-renderiza solo si cambian esos items. */
-export function useActiveBoardItems(): Item[] {
-  const activeBoardId = useAppStore((s) => s.activeBoardId);
-  return useAppStore((s) => {
-    const b = s.boards.find((x) => x.id === activeBoardId);
-    return b?.items ?? EMPTY_ITEMS;
-  });
-}
-
-const EMPTY_ITEMS: Item[] = [];
-
-/** Hook que devuelve los workspaces. Estable salvo que cambien. */
-export function useWorkspaces() {
-  return useAppStore((s) => s.workspaces);
-}
-
-/** Hook que devuelve los usuarios. Estable salvo que cambien. */
-export function useUsers() {
-  return useAppStore((s) => s.users);
-}
-
-/** Memoiza un valor derivado de estado sin disparar re-renders extras. */
-export function useDerived<T>(selector: (state: AppState) => T): T {
-  return useAppStore(selector);
 }

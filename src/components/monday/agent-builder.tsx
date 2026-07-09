@@ -10,8 +10,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
-import type { Agent, AgentTool, AgentTriggerType } from "@/lib/types";
-import { MODEL_CATALOG, type ModelInfo } from "@/lib/model-catalog";
+import type { Agent, AgentTool, AgentTriggerType, AgentScope } from "@/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -45,166 +44,7 @@ import {
   Plus,
   Lightbulb,
   Zap,
-  Cpu,
-  Gauge,
-  DollarSign,
-  Wrench,
 } from "lucide-react";
-
-// ============================================================================
-// Componente ModelPicker — selector visual de modelo IA
-// ============================================================================
-
-const SPEED_LABELS: Record<ModelInfo["speed"], { label: string; color: string }> = {
-  fast: { label: "Rápido", color: "text-emerald-500" },
-  medium: { label: "Normal", color: "text-blue-500" },
-  slow: { label: "Detallado", color: "text-amber-500" },
-};
-
-const COST_LABELS: Record<ModelInfo["costTier"], { label: string; color: string }> = {
-  free: { label: "Gratis", color: "text-emerald-500" },
-  low: { label: "Bajo", color: "text-blue-500" },
-  medium: { label: "Medio", color: "text-amber-500" },
-  high: { label: "Alto", color: "text-red-500" },
-};
-
-const PROVIDER_COLORS: Record<string, string> = {
-  nvidia: "#76B900",
-};
-
-const PROVIDER_LABELS: Record<string, string> = {
-  nvidia: "NVIDIA NIM",
-};
-
-const BADGE_CONFIG: Record<string, { label: string; color: string }> = {
-  recommended: { label: "Recomendado", color: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
-  fast: { label: "⚡ Ultra rápido", color: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
-  reasoning: { label: "🧠 Razonamiento", color: "bg-purple-500/15 text-purple-600 border-purple-500/30" },
-  vision: { label: "👁️ Visión", color: "bg-blue-500/15 text-blue-600 border-blue-500/30" },
-};
-
-interface ModelPickerProps {
-  value: string;
-  onChange: (modelId: string) => void;
-  /** Si true, solo muestra modelos que soportan tools */
-  requiresTools?: boolean;
-}
-
-function ModelPicker({ value, onChange, requiresTools = false }: ModelPickerProps) {
-  const models = requiresTools
-    ? MODEL_CATALOG.filter((m) => m.supportsTools)
-    : MODEL_CATALOG;
-
-  return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-1 gap-2">
-        {models.map((model) => {
-          const isSelected = value === model.id;
-          const providerColor = PROVIDER_COLORS[model.provider] ?? "#888";
-          const speedInfo = SPEED_LABELS[model.speed];
-          const costInfo = COST_LABELS[model.costTier];
-          const badgeInfo = model.badge ? BADGE_CONFIG[model.badge] : null;
-
-          return (
-            <button
-              key={model.id}
-              type="button"
-              onClick={() => onChange(model.id)}
-              className={cn(
-                "w-full text-left p-3 rounded-lg border transition-all duration-150",
-                isSelected
-                  ? "border-[#0072E5] bg-[#0072E5]/5 shadow-sm"
-                  : "border-border hover:border-[#0072E5]/40 hover:bg-secondary/30 bg-card"
-              )}
-            >
-              <div className="flex items-start gap-2.5">
-                {/* Provider dot + selección */}
-                <div className="flex flex-col items-center gap-1 pt-0.5">
-                  <div
-                    className={cn(
-                      "w-4 h-4 rounded-full border-2 transition-all",
-                      isSelected
-                        ? "border-[#0072E5] bg-[#0072E5]"
-                        : "border-border bg-transparent"
-                    )}
-                  >
-                    {isSelected && (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: providerColor }}
-                    title={PROVIDER_LABELS[model.provider]}
-                  />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold">{model.name}</span>
-                    <span
-                      className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                      style={{
-                        background: `${providerColor}18`,
-                        color: providerColor,
-                      }}
-                    >
-                      {PROVIDER_LABELS[model.provider]}
-                    </span>
-                    {badgeInfo && (
-                      <span
-                        className={cn(
-                          "text-[9px] font-semibold px-1.5 py-0.5 rounded border",
-                          badgeInfo.color
-                        )}
-                      >
-                        {badgeInfo.label}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                    {model.description}
-                  </p>
-                  {/* Métricas */}
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <span className={cn("text-[10px] font-medium flex items-center gap-0.5", speedInfo.color)}>
-                      <Gauge className="h-2.5 w-2.5" />
-                      {speedInfo.label}
-                    </span>
-                    <span className={cn("text-[10px] font-medium flex items-center gap-0.5", costInfo.color)}>
-                      <DollarSign className="h-2.5 w-2.5" />
-                      {costInfo.label}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                      <Cpu className="h-2.5 w-2.5" />
-                      {(model.contextWindow / 1000).toFixed(0)}K ctx
-                    </span>
-                    {model.supportsTools && (
-                      <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
-                        <Wrench className="h-2.5 w-2.5" />
-                        Tools
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      {requiresTools && MODEL_CATALOG.filter(m => !m.supportsTools).length > 0 && (
-        <p className="text-[10px] text-muted-foreground pl-1">
-          * Modelos sin soporte de tools están ocultos porque este agente los usa.
-        </p>
-      )}
-    </div>
-  );
-}
-
-
 
 // ---- PLANTILLAS PREDEFINIDAS (como Monday AI presets) ----
 interface AgentTemplate {
@@ -335,8 +175,6 @@ export function AgentBuilder() {
   const addAgent = useAppStore((s) => s.addAgent);
   const currentUserId = useAppStore((s) => s.currentUserId);
   const activeBoardId = useAppStore((s) => s.activeBoardId);
-  const defaultModel = useAppStore((s) => s.settings.defaultModel);
-  const defaultTemperature = useAppStore((s) => s.settings.defaultTemperature);
 
   const [step, setStep] = useState<"templates" | "configure" | "deploy">("templates");
   const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null);
@@ -344,7 +182,22 @@ export function AgentBuilder() {
   const [testOutput, setTestOutput] = useState("");
   const [testing, setTesting] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [showModelPicker, setShowModelPicker] = useState(false);
+  // Prompt-to-agent (como Monday.com)
+  const [promptInput, setPromptInput] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState("");
+  const groqApiKey = useAppStore((s) => s.sidekickGroqApiKey);
+  const workspaces = useAppStore((s) => s.workspaces);
+
+  // Ejemplos rápidos para el prompt
+  const PROMPT_EXAMPLES = [
+    { icon: "🏷️", text: "Un agente que categorice automáticamente los items nuevos" },
+    { icon: "📊", text: "Un agente que genere reportes semanales del board" },
+    { icon: "😊", text: "Un agente que analice el sentimiento de los updates" },
+    { icon: "📧", text: "Un agente que redacte emails para clientes" },
+    { icon: "⚡", text: "Un agente que priorice items según urgencia" },
+    { icon: "🔍", text: "Un agente que detecte items duplicados" },
+  ];
 
   const reset = () => {
     setStep("templates");
@@ -368,9 +221,8 @@ export function AgentBuilder() {
       description: template.description,
       systemPrompt: template.systemPrompt,
       tools: template.tools,
-      // Usa el modelo configurado en Settings como default
-      model: defaultModel,
-      temperature: defaultTemperature,
+      model: "glm-4.6",
+      temperature: 0.4,
       maxTokens: 1500,
       version: 1,
       isActive: true,
@@ -385,13 +237,65 @@ export function AgentBuilder() {
       updatedAt: new Date().toISOString(),
     };
     setDraft(newDraft);
-    setShowModelPicker(false);
     setStep("configure");
   };
 
   const update = (patch: Partial<Agent>) => {
     if (!draft) return;
     setDraft({ ...draft, ...patch });
+  };
+
+  // ===== PROMPT-TO-AGENT: genera un agente desde un prompt en lenguaje natural =====
+  const handleGenerateAgent = async () => {
+    if (!promptInput.trim() || generating) return;
+    setGenerating(true);
+    setGenerateError("");
+    try {
+      const res = await fetch("/api/agent/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptInput.trim(),
+          groqApiKey,
+          context: {
+            boardName: useAppStore.getState().boards.find((b) => b.id === activeBoardId)?.name,
+            workspaceName: workspaces[0]?.name,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.agent) {
+        throw new Error(data.error || "Error generando agente");
+      }
+      const a = data.agent;
+      const newDraft: Agent = {
+        id: "draft",
+        name: a.name,
+        description: a.description,
+        systemPrompt: a.systemPrompt,
+        tools: a.tools,
+        model: a.model || "glm-4.6",
+        temperature: a.temperature ?? 0.4,
+        maxTokens: 1500,
+        version: 1,
+        isActive: true,
+        createdById: currentUserId,
+        organizationId: "org1",
+        boardId: activeBoardId,
+        scope: a.scope || "global",
+        triggers: a.triggers,
+        icon: a.icon,
+        color: a.color,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setDraft(newDraft);
+      setStep("configure");
+    } catch (e: any) {
+      setGenerateError(e?.message ?? "Error desconocido");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleDeploy = () => {
@@ -509,6 +413,79 @@ export function AgentBuilder() {
         {/* STEP 1: TEMPLATES */}
         {step === "templates" && (
           <div className="flex-1 overflow-y-auto p-5">
+            {/* ===== PROMPT-TO-AGENT (como Monday.com) ===== */}
+            <div className="mb-5 p-4 rounded-xl bg-gradient-to-br from-[#0072E5]/[0.04] to-[#A25BFF]/[0.04] border border-[#0072E5]/20">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0072E5] to-[#A25BFF] flex items-center justify-center text-white">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-[#323338]">Crear agente con IA</div>
+                  <div className="text-[11px] text-[#676879]">Describe qué quieres que haga y la IA genera el agente completo</div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <textarea
+                  value={promptInput}
+                  onChange={(e) => setPromptInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleGenerateAgent();
+                    }
+                  }}
+                  placeholder="Ej: Un agente que categorice los items automáticamente y notifique al equipo cuando haya items urgentes..."
+                  className="flex-1 min-h-[60px] max-h-[120px] text-sm px-3 py-2 rounded-lg border border-[#E5E8EE] bg-white resize-none focus:outline-none focus:border-[#0072E5] focus:ring-2 focus:ring-[#0072E5]/10"
+                  disabled={generating}
+                />
+                <Button
+                  onClick={handleGenerateAgent}
+                  disabled={!promptInput.trim() || generating}
+                  className="bg-[#0072E5] hover:bg-[#0058B5] text-white px-4 self-stretch"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-1.5" />
+                      Generar
+                    </>
+                  )}
+                </Button>
+              </div>
+              {generateError && (
+                <div className="mt-2 text-xs text-[#E2445C] bg-[#E2445C]/10 px-2 py-1 rounded">
+                  ⚠️ {generateError}
+                </div>
+              )}
+              {/* Ejemplos rápidos */}
+              <div className="mt-3">
+                <div className="text-[10px] text-[#676879] mb-1.5 font-medium uppercase tracking-wider">Ejemplos rápidos:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PROMPT_EXAMPLES.map((ex, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPromptInput(ex.text)}
+                      disabled={generating}
+                      className="text-[11px] px-2 py-1 rounded-full bg-white border border-[#E5E8EE] hover:border-[#0072E5]/40 hover:bg-[#0072E5]/5 text-[#323338] transition disabled:opacity-50"
+                    >
+                      {ex.icon} {ex.text.slice(0, 40)}{ex.text.length > 40 ? "..." : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Divisor */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-1 h-px bg-[#E5E8EE]" />
+              <span className="text-[10px] text-[#676879] font-medium uppercase tracking-wider">o usa una plantilla</span>
+              <div className="flex-1 h-px bg-[#E5E8EE]" />
+            </div>
+
             {/* Filtro por categoría */}
             <div className="flex items-center gap-1.5 mb-4 flex-wrap">
               <button
@@ -658,8 +635,8 @@ export function AgentBuilder() {
                       onClick={() => {
                         const next = selected
                           ? draft.triggers.filter((t) => t !== trigger.value)
-                          : [...draft.triggers, trigger.value];
-                        update({ triggers: next });
+                          : [...draft.triggers, trigger.value as any];
+                        update({ triggers: next as any });
                       }}
                       className={cn(
                         "text-[11px] px-2.5 py-1.5 rounded-md border transition font-medium",
@@ -675,96 +652,47 @@ export function AgentBuilder() {
               </div>
             </div>
 
-            {/* ── Modelo IA — sección prominente ── */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium flex items-center gap-1">
-                  <Cpu className="h-3 w-3 text-[#0072E5]" />
-                  Modelo IA
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setShowModelPicker((v) => !v)}
-                  className="text-[10px] text-[#0072E5] hover:underline"
-                >
-                  {showModelPicker ? "Ocultar opciones" : "Cambiar modelo"}
-                </button>
-              </div>
-
-              {/* Modelo actualmente seleccionado */}
-              {!showModelPicker && (() => {
-                const info = MODEL_CATALOG.find(m => m.id === draft.model);
-                const providerColor = info ? (PROVIDER_COLORS[info.provider] ?? "#888") : "#888";
-                const badgeInfo = info?.badge ? BADGE_CONFIG[info.badge] : null;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => setShowModelPicker(true)}
-                    className="w-full text-left p-2.5 rounded-lg border border-[#0072E5]/40 bg-[#0072E5]/5 hover:bg-[#0072E5]/10 transition"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ background: providerColor }} />
-                      <span className="text-sm font-semibold">{info?.name ?? draft.model}</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                        style={{ background: `${providerColor}18`, color: providerColor }}>
-                        {info ? PROVIDER_LABELS[info.provider] : ""}
-                      </span>
-                      {badgeInfo && (
-                        <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded border", badgeInfo.color)}>
-                          {badgeInfo.label}
-                        </span>
-                      )}
-                      <span className="ml-auto text-[10px] text-muted-foreground">Clic para cambiar →</span>
+            {/* Configuración avanzada (colapsable) */}
+            <details className="border border-border rounded-lg">
+              <summary className="px-3 py-2 text-xs font-medium cursor-pointer hover:bg-secondary/30 rounded-lg">
+                ⚙️ Configuración avanzada (modelo, temperatura)
+              </summary>
+              <div className="px-3 py-3 space-y-3 border-t border-border">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-medium">Modelo LLM</Label>
+                    <select
+                      value={draft.model}
+                      onChange={(e) => update({ model: e.target.value as any })}
+                      className="w-full h-8 text-xs rounded border border-border bg-card px-2"
+                    >
+                      <option value="glm-4.6">GLM-4.6 (recomendado)</option>
+                      <option value="glm-4.5-air">GLM-4.5 Air (rápido)</option>
+                      <option value="gpt-4o">GPT-4o</option>
+                      <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-medium">
+                      Creatividad: {draft.temperature}
+                    </Label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={draft.temperature}
+                      onChange={(e) => update({ temperature: Number(e.target.value) })}
+                      className="w-full h-8 accent-[#0072E5]"
+                    />
+                    <div className="flex justify-between text-[9px] text-muted-foreground">
+                      <span>Preciso</span>
+                      <span>Creativo</span>
                     </div>
-                  </button>
-                );
-              })()}
-
-              {/* Lista de modelos expandida */}
-              {showModelPicker && (
-                <ModelPicker
-                  value={draft.model}
-                  onChange={(modelId) => {
-                    update({ model: modelId });
-                    setShowModelPicker(false);
-                  }}
-                  requiresTools={draft.tools.length > 0}
-                />
-              )}
-            </div>
-
-            {/* ── Temperatura + Max tokens ── */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-[10px] font-medium">
-                  Creatividad: <span className="text-[#0072E5] font-bold">{draft.temperature}</span>
-                </Label>
-                <input
-                  type="range" min="0" max="1" step="0.1"
-                  value={draft.temperature}
-                  onChange={(e) => update({ temperature: Number(e.target.value) })}
-                  className="w-full accent-[#0072E5]"
-                />
-                <div className="flex justify-between text-[9px] text-muted-foreground">
-                  <span>Preciso</span><span>Creativo</span>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] font-medium">
-                  Longitud: <span className="text-[#0072E5] font-bold">{draft.maxTokens.toLocaleString()}</span> tok
-                </Label>
-                <input
-                  type="range" min="256" max="8000" step="256"
-                  value={draft.maxTokens}
-                  onChange={(e) => update({ maxTokens: Number(e.target.value) })}
-                  className="w-full accent-[#0072E5]"
-                />
-                <div className="flex justify-between text-[9px] text-muted-foreground">
-                  <span>Corta</span><span>Larga</span>
-                </div>
-              </div>
-            </div>
-
+            </details>
           </div>
         )}
 

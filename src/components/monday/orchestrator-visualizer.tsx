@@ -89,142 +89,142 @@ export function OrchestratorVisualizer() {
         break;
       }
 
-      // Run in parallel if marked parallel
-      const parallel = ready.filter((s) => s.parallel);
-      const batch = parallel.length > 0 ? parallel : [ready[0]];
+      // FIX: usar Promise.all para ejecutar pasos en paralelo de verdad
+      // (antes era for...of + await → secuencial disfrazado de paralelo)
+      const parallelSteps = ready.filter((s) => s.parallel);
+      const batch = parallelSteps.length > 0 ? parallelSteps : [ready[0]];
 
       pushLog(
         `⚡ Ejecutando ${batch.length} paso(s) en paralelo: ${batch.map((s) => s.name).join(", ")}`
       );
 
-      for (const step of batch) {
-        setRunningStepIds((r) => [...r, step.id]);
-        const agent = agents.find((a) => a.id === step.agentId);
+      // Marcar todos como running
+      setRunningStepIds((r) => [...r, ...batch.map((s) => s.id)]);
 
-        if (!agent) {
-          pushLog(`  ✗ Agente no encontrado para paso ${step.name}`);
-          setFailedStepIds((f) => [...f, step.id]);
-          setRunningStepIds((r) => r.filter((id) => id !== step.id));
-          done.add(step.id);
-          continue;
-        }
+      // Ejecutar todos en paralelo con Promise.all
+      await Promise.all(
+        batch.map(async (step) => {
+          const agent = agents.find((a) => a.id === step.agentId);
 
-        pushLog(`  ↳ ${step.name} (${agent.name}) — ejecutando vía API…`);
-
-        // Construir input context con outputs de pasos previos (inputMapping)
-        const contextParts: string[] = [`Paso: ${step.name}`];
-        if (step.inputMapping) {
-          for (const [key, sourceStep] of Object.entries(step.inputMapping)) {
-            const stepId = String(sourceStep).split(".")[0];
-            const prevOutput = outputs.get(stepId);
-            if (prevOutput) {
-              contextParts.push(`${key}: ${JSON.stringify(prevOutput).slice(0, 200)}`);
-            }
+          if (!agent) {
+            pushLog(`  ✗ Agente no encontrado para paso ${step.name}`);
+            setFailedStepIds((f) => [...f, step.id]);
+            setRunningStepIds((r) => r.filter((id) => id !== step.id));
+            done.add(step.id);
+            return;
           }
-        }
 
-        try {
-          // Llamar a la API real de agentes
-          const res = await fetch("/api/agent/run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agentId: agent.id,
-              agentName: agent.name,
-              systemPrompt: agent.systemPrompt,
-              model: agent.model,
-              temperature: agent.temperature,
-              maxTokens: agent.maxTokens,
-              userPrompt: `${agent.description}\n\nContexto:\n${contextParts.join("\n")}\n\nDevuelve tu respuesta siguiendo el system prompt.`,
-            }),
-          });
+          pushLog(`  ↳ ${step.name} (${agent.name}) — ejecutando vía API…`);
 
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-          // Leer respuesta (SSE o JSON)
-          const contentType = res.headers.get("content-type") ?? "";
-          let outputText = "";
-          let tokensUsed = 0;
-
-          if (contentType.includes("text/event-stream") && res.body) {
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            while (true) {
-              const { done: rDone, value } = await reader.read();
-              if (rDone) break;
-              buffer += decoder.decode(value, { stream: true });
-              const events = buffer.split("\n\n");
-              buffer = events.pop() ?? "";
-              for (const blk of events) {
-                const lines = blk.split("\n");
-                let evt = "msg";
-                let data = "";
-                for (const ln of lines) {
-                  if (ln.startsWith("event:")) evt = ln.slice(6).trim();
-                  else if (ln.startsWith("data:")) data += ln.slice(5).trim();
-                }
-                try {
-                  const p = JSON.parse(data);
-                  if (evt === "chunk" && p.text) outputText += p.text;
-                  if (evt === "done") {
-                    outputText = p.fullOutput || outputText;
-                    tokensUsed = p.tokensUsed ?? 0;
-                  }
-                  if (evt === "error") throw new Error(p.message);
-                } catch (e) {
-                  if (e instanceof SyntaxError) continue;
-                  throw e;
-                }
+          const contextParts: string[] = [`Paso: ${step.name}`];
+          if (step.inputMapping) {
+            for (const [key, sourceStep] of Object.entries(step.inputMapping)) {
+              const stepId = String(sourceStep).split(".")[0];
+              const prevOutput = outputs.get(stepId);
+              if (prevOutput) {
+                contextParts.push(`${key}: ${JSON.stringify(prevOutput).slice(0, 200)}`);
               }
             }
-          } else {
-            const data = await res.json();
-            outputText = data.content || data.output || "";
-            tokensUsed = data.tokensUsed ?? Math.ceil(outputText.length / 4);
           }
 
-          // Intentar parsear output como JSON (si el agente devuelve JSON)
-          let parsedOutput: any = outputText;
           try {
-            parsedOutput = JSON.parse(outputText);
-          } catch {
-            // No es JSON, usar como string
-          }
+            const res = await fetch("/api/agent/run", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agentId: agent.id,
+                agentName: agent.name,
+                systemPrompt: agent.systemPrompt,
+                model: agent.model,
+                temperature: agent.temperature,
+                maxTokens: agent.maxTokens,
+                userPrompt: `${agent.description}\n\nContexto:\n${contextParts.join("\n")}\n\nDevuelve tu respuesta siguiendo el system prompt.`,
+              }),
+            });
 
-          outputs.set(step.id, {
-            step: step.name,
-            output: parsedOutput,
-            score: parsedOutput?.score ?? (typeof parsedOutput === "number" ? parsedOutput : 50),
-            tokensUsed,
-            completedAt: new Date().toISOString(),
-          });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-          // Evaluar condición si existe
-          if (step.condition) {
-            const lastOutput = outputs.get(step.dependsOn[0] ?? step.id);
-            const score = lastOutput?.score ?? 50;
-            const condMet = evalCondition(step.condition, score);
-            if (!condMet) {
-              pushLog(`  ✗ Condición NO cumplida: ${step.condition} → skip`);
-              setRunningStepIds((r) => r.filter((id) => id !== step.id));
-              done.add(step.id);
-              continue;
+            const contentType = res.headers.get("content-type") ?? "";
+            let outputText = "";
+            let tokensUsed = 0;
+
+            if (contentType.includes("text/event-stream") && res.body) {
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = "";
+              while (true) {
+                const { done: rDone, value } = await reader.read();
+                if (rDone) break;
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split("\n\n");
+                buffer = events.pop() ?? "";
+                for (const blk of events) {
+                  const lines = blk.split("\n");
+                  let evt = "msg";
+                  let data = "";
+                  for (const ln of lines) {
+                    if (ln.startsWith("event:")) evt = ln.slice(6).trim();
+                    else if (ln.startsWith("data:")) data += ln.slice(5).trim();
+                  }
+                  try {
+                    const p = JSON.parse(data);
+                    if (evt === "chunk" && p.text) outputText += p.text;
+                    if (evt === "done") {
+                      outputText = p.fullOutput || outputText;
+                      tokensUsed = p.tokensUsed ?? 0;
+                    }
+                    if (evt === "error") throw new Error(p.message);
+                  } catch (e) {
+                    if (e instanceof SyntaxError) continue;
+                    throw e;
+                  }
+                }
+              }
+            } else {
+              const data = await res.json();
+              outputText = data.content || data.output || "";
+              tokensUsed = data.tokensUsed ?? Math.ceil(outputText.length / 4);
             }
-            pushLog(`  ✓ Condición cumplida: ${step.condition}`);
-          }
 
-          setRunningStepIds((r) => r.filter((id) => id !== step.id));
-          setCompletedStepIds((c) => [...c, step.id]);
-          done.add(step.id);
-          pushLog(`  ✓ Completado: ${step.name} (${tokensUsed} tokens)`);
-        } catch (e: any) {
-          pushLog(`  ✗ Error en ${step.name}: ${e?.message ?? "desconocido"}`);
-          setFailedStepIds((f) => [...f, step.id]);
-          setRunningStepIds((r) => r.filter((id) => id !== step.id));
-          done.add(step.id);
-        }
-      }
+            let parsedOutput: any = outputText;
+            try {
+              parsedOutput = JSON.parse(outputText);
+            } catch { /* no es JSON */ }
+
+            outputs.set(step.id, {
+              step: step.name,
+              output: parsedOutput,
+              score: parsedOutput?.score ?? (typeof parsedOutput === "number" ? parsedOutput : 50),
+              tokensUsed,
+              completedAt: new Date().toISOString(),
+            });
+
+            // Evaluar condición si existe
+            if (step.condition) {
+              const lastOutput = outputs.get(step.dependsOn[0] ?? step.id);
+              const score = lastOutput?.score ?? 50;
+              const condMet = evalCondition(step.condition, score);
+              if (!condMet) {
+                pushLog(`  ✗ Condición NO cumplida: ${step.condition} → skip`);
+                setRunningStepIds((r) => r.filter((id) => id !== step.id));
+                done.add(step.id);
+                return;
+              }
+              pushLog(`  ✓ Condición cumplida: ${step.condition}`);
+            }
+
+            setRunningStepIds((r) => r.filter((id) => id !== step.id));
+            setCompletedStepIds((c) => [...c, step.id]);
+            done.add(step.id);
+            pushLog(`  ✓ Completado: ${step.name} (${tokensUsed} tokens)`);
+          } catch (e: any) {
+            pushLog(`  ✗ Error en ${step.name}: ${e?.message ?? "desconocido"}`);
+            setFailedStepIds((f) => [...f, step.id]);
+            setRunningStepIds((r) => r.filter((id) => id !== step.id));
+            done.add(step.id);
+          }
+        })
+      );
     }
 
     pushLog(`✓ Plan finalizado — ${done.size}/${steps.length} pasos completados`);
@@ -409,7 +409,18 @@ function NewPlanWizard({
   };
 
   const removeStep = (idx: number) => {
-    setSteps((s) => s.filter((_, i) => i !== idx));
+    setSteps((s) => {
+      const removedId = s[idx]?.id;
+      const filtered = s.filter((_, i) => i !== idx);
+      // FIX: limpiar dependsOn en otros pasos que dependían del eliminado
+      if (removedId) {
+        return filtered.map((st) => ({
+          ...st,
+          dependsOn: st.dependsOn.filter((d) => d !== removedId),
+        }));
+      }
+      return filtered;
+    });
   };
 
   const toggleDep = (idx: number, depId: string) => {

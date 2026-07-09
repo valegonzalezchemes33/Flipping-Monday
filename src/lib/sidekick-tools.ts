@@ -4,11 +4,14 @@
 // Las tools se envían al LLM (Groq/Z.ai) y se ejecutan en el cliente contra
 // el store de Zustand. El agente recibe los resultados y puede continuar.
 
-import type { GroqTool } from "./groq-types";
+import type { GroqTool } from "./groq-client";
+import { executeAIBlock } from "./ai-blocks";
 
 export interface ToolExecutionContext {
   // Snapshot read-only del estado — el ejecutor en cliente pasa esto
   getState: () => any;
+  // API key de Groq (para AI Blocks que llaman al LLM)
+  groqApiKey?: string | null;
   // Acciones que mutan el store
   actions: {
     addItem: (boardId: string, groupId: string, name: string, columnValues?: any) => string;
@@ -22,34 +25,23 @@ export interface ToolExecutionContext {
     setSidebarView: (v: string) => void;
     addUpdate: (itemId: string, body: string) => void;
     pushNotification: (n: any) => void;
-    addFile: (file: { itemId: string; name: string; size: number; mime: string; content?: string }) => void;
-    deleteFile: (fileId: string) => void;
     addSubitem: (parentId: string, name: string) => void;
-    deleteSubitem: (parentId: string, subitemId: string) => void;
-    renameGroup: (boardId: string, groupId: string, title: string) => void;
-    deleteGroup: (boardId: string, groupId: string) => void;
-    duplicateGroup: (boardId: string, groupId: string) => void;
-    duplicateItem: (itemId: string) => void;
-    archiveItem: (itemId: string) => void;
+    addBoard: (workspaceId: string, name: string) => string;
+    addWorkspace: (name: string) => string;
+    renameBoard: (boardId: string, name: string) => void;
+    deleteBoard: (boardId: string) => void;
+    duplicateBoard: (boardId: string) => string;
     addColumn: (boardId: string, col: { title: string; type: string }) => void;
     deleteColumn: (boardId: string, columnId: string) => void;
-    // Boards
-    addBoard: (workspaceId: string, name: string) => string;
-    renameBoard: (boardId: string, name: string) => void;
-    duplicateBoard: (boardId: string) => string;
-    archiveBoard: (boardId: string) => void;
-    deleteBoard: (boardId: string) => void;
-    // Workspaces
-    addWorkspace: (name: string) => string;
-    renameWorkspace: (workspaceId: string, name: string) => void;
-    deleteWorkspace: (workspaceId: string) => void;
+    renameGroup: (boardId: string, groupId: string, title: string) => void;
+    deleteGroup: (boardId: string, groupId: string) => void;
+    duplicateItem: (itemId: string) => void;
+    archiveItem: (itemId: string) => void;
+    addFile: (file: { itemId: string; name: string; size: number; mime: string; content?: string }) => void;
   };
   // Archivos adjuntos por el usuario (para que el agente los lea)
-  // content puede ser texto plano (para txt/csv/json) o un data URL
-  // (data:image/png;base64,...) para imágenes que se enviarán al VLM.
   attachedFiles?: { name: string; size: number; mime: string; content: string }[];
-  // Prompt del usuario actual — se usa para darle contexto al VLM sobre qué
-  // buscar en la imagen (ej: "¿qué ves en la imagen?")
+  // Prompt del usuario actual — se usa para darle contexto al VLM
   userPrompt?: string;
 }
 
@@ -273,11 +265,13 @@ export const SIDEKICK_TOOLS: GroqTool[] = [
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
+  // ===== AI BLOCK TOOLS (funciones agenticas de Monday) =====
   {
     type: "function",
     function: {
-      name: "duplicate_item",
-      description: "Duplica un item existente (copia con todos sus valores). Úsalo cuando el usuario dice 'duplica este item', 'copia esta tarea'.",
+      name: "ai_summarize",
+      description:
+        "Resume el texto de un item o de todos sus updates. Úsalo cuando el usuario pide 'resume este item', 'dame un resumen de lo que pasó'.",
       parameters: {
         type: "object",
         properties: { itemId: { type: "string" } },
@@ -288,8 +282,25 @@ export const SIDEKICK_TOOLS: GroqTool[] = [
   {
     type: "function",
     function: {
-      name: "archive_item",
-      description: "Archiva un item (lo marca como archivado, no se elimina). Úsalo cuando el usuario dice 'archiva', 'oculta este item'.",
+      name: "ai_categorize",
+      description:
+        "Categoriza un item en una de las categorías disponibles usando IA. Úsalo para 'categoriza este item', 'asigna una categoría'.",
+      parameters: {
+        type: "object",
+        properties: {
+          itemId: { type: "string" },
+          columnName: { type: "string", description: "Nombre de la columna status/priority donde asignar" },
+        },
+        required: ["itemId", "columnName"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ai_detect_sentiment",
+      description:
+        "Analiza el sentimiento de los updates de un item (positive/negative/neutral). Úsalo para 'cómo se siente el equipo sobre este item'.",
       parameters: {
         type: "object",
         properties: { itemId: { type: "string" } },
@@ -300,218 +311,141 @@ export const SIDEKICK_TOOLS: GroqTool[] = [
   {
     type: "function",
     function: {
-      name: "rename_group",
-      description: "Renombra un grupo existente en un board. Úsalo cuando el usuario dice 'renombra el grupo', 'cambia el nombre del grupo'.",
+      name: "ai_suggest_actions",
+      description:
+        "Sugiere 3 acciones concretas para un item basándose en su contenido y estado. Úsalo para 'qué deberíamos hacer con este item'.",
+      parameters: {
+        type: "object",
+        properties: { itemId: { type: "string" } },
+        required: ["itemId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ai_prioritize",
+      description:
+        "Calcula la prioridad (1-5) de un item basándose en su contenido, deadlines y estado. Úsalo para 'prioriza este item'.",
+      parameters: {
+        type: "object",
+        properties: { itemId: { type: "string" } },
+        required: ["itemId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ai_translate_item",
+      description:
+        "Traduce el nombre y descripción de un item al idioma especificado. Úsalo para 'traduce este item al inglés'.",
       parameters: {
         type: "object",
         properties: {
-          boardId: { type: "string" },
-          groupId: { type: "string" },
-          title: { type: "string" },
+          itemId: { type: "string" },
+          targetLanguage: { type: "string", description: "ej: english, spanish, french" },
         },
-        required: ["boardId", "groupId", "title"],
+        required: ["itemId", "targetLanguage"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "delete_group",
-      description: "Elimina un grupo y todos sus items. Úsalo con cuidado cuando el usuario confirma que quiere borrar un grupo completo.",
+      name: "ai_improve_update",
+      description:
+        "Mejora el texto de un update publicando una versión corregida y más profesional. Úsalo para 'mejora este update'.",
       parameters: {
         type: "object",
-        properties: {
-          boardId: { type: "string" },
-          groupId: { type: "string" },
-        },
-        required: ["boardId", "groupId"],
+        properties: { updateId: { type: "string" } },
+        required: ["updateId"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "add_subitem",
-      description: "Añade un subitem a un item existente. Úsalo cuando el usuario dice 'añade un subitem', 'crea una subtarea'.",
+      name: "ai_generate_subitems",
+      description:
+        "Genera subitems sugeridos por IA para un item (ej: desglosar una tarea en subtareas). Úsalo para 'descompón este item en subtareas'.",
       parameters: {
         type: "object",
-        properties: {
-          parentId: { type: "string" },
-          name: { type: "string" },
-        },
-        required: ["parentId", "name"],
+        properties: { itemId: { type: "string" } },
+        required: ["itemId"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "add_column",
-      description: "Añade una nueva columna a un board. type puede ser: text, status, date, numbers, people, checkbox, priority. Úsalo cuando el usuario dice 'añade una columna'.",
-      parameters: {
-        type: "object",
-        properties: {
-          boardId: { type: "string" },
-          title: { type: "string", description: "Nombre de la columna" },
-          type: { type: "string", description: "text, status, date, numbers, people, checkbox, priority" },
-        },
-        required: ["boardId", "title", "type"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_board",
-      description: "Crea un board nuevo en un workspace. Úsalo cuando el usuario dice 'crea un board', 'nuevo tablero'.",
-      parameters: {
-        type: "object",
-        properties: {
-          workspaceId: { type: "string", description: "ID del workspace. Si no se sabe, usar el primero." },
-          name: { type: "string" },
-        },
-        required: ["name"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "rename_board",
-      description: "Cambia el nombre de un board existente. Úsalo cuando el usuario dice 'renombra el board', 'cambia el nombre del tablero'.",
-      parameters: {
-        type: "object",
-        properties: {
-          boardId: { type: "string" },
-          name: { type: "string", description: "Nuevo nombre del board" },
-        },
-        required: ["boardId", "name"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "duplicate_board",
-      description: "Duplica un board existente (copia todos sus grupos, items y columnas). Úsalo cuando el usuario dice 'duplica este board', 'haz una copia del tablero'.",
-      parameters: {
-        type: "object",
-        properties: {
-          boardId: { type: "string" },
-        },
-        required: ["boardId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "archive_board",
-      description: "Archiva un board (no se elimina pero se marca como archivado). Úsalo cuando el usuario dice 'archiva este board', 'oculta este tablero'.",
-      parameters: {
-        type: "object",
-        properties: { boardId: { type: "string" } },
-        required: ["boardId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "delete_board",
-      description: "Elimina un board completo con todos sus items y grupos. Úsalo SOLO cuando el usuario confirma explícitamente que quiere borrar el tablero.",
-      parameters: {
-        type: "object",
-        properties: { boardId: { type: "string" } },
-        required: ["boardId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_workspaces",
-      description: "Lista todos los workspaces disponibles con su ID, nombre y cantidad de boards. Úsalo cuando el usuario pregunta qué workspaces tiene o quiere saber dónde crear cosas.",
+      name: "ai_board_insights",
+      description:
+        "Genera insights del board activo: distribución de estados, items destacados, blockers, tendencias. Úsalo para 'dame insights del board', 'analiza este board'.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
   {
     type: "function",
     function: {
-      name: "create_workspace",
-      description: "Crea un workspace nuevo. Úsalo cuando el usuario dice 'crea un workspace', 'nuevo workspace', 'quiero un espacio de trabajo nuevo'. El sistema no requiere permisos especiales: el usuario es owner y puede crear todos los workspaces que quiera.",
+      name: "ai_detect_duplicates",
+      description:
+        "Detecta items duplicados en el board activo comparando nombres y contenido. Úsalo para 'hay items duplicados?'.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ai_generate_report",
+      description:
+        "Genera un reporte ejecutivo del board activo (estado general, progreso, riesgos, próximos pasos). Úsalo para 'genera un reporte', 'dame un resumen ejecutivo'.",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Nombre del workspace (ej: 'Compras', 'Proyectos 2025', 'Recursos Humanos')" },
+          format: { type: "string", description: "brief o detailed" },
         },
-        required: ["name"],
+        required: [],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "rename_workspace",
-      description: "Cambia el nombre de un workspace existente. Úsalo cuando el usuario dice 'renombra el workspace'.",
+      name: "ai_draft_email",
+      description:
+        "Redacta un email basado en el contexto de un item (ej: notificar a cliente, recordar deadline). Úsalo para 'redacta un email sobre este item'.",
       parameters: {
         type: "object",
         properties: {
-          workspaceId: { type: "string" },
-          name: { type: "string" },
+          itemId: { type: "string" },
+          recipient: { type: "string", description: "ej: cliente, equipo, manager" },
+          purpose: { type: "string", description: "ej: notificar, recordar, actualizar" },
         },
-        required: ["workspaceId", "name"],
+        required: ["itemId", "purpose"],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "delete_workspace",
-      description: "Elimina un workspace completo con todos sus boards. Úsalo SOLO cuando el usuario confirma explícitamente. Acción destructiva.",
+      name: "ai_extract_action_items",
+      description:
+        "Extrae action items de los updates de un item (qué tareas concretas se mencionan). Úsalo para 'qué acciones se mencionan en los updates'.",
       parameters: {
         type: "object",
-        properties: { workspaceId: { type: "string" } },
-        required: ["workspaceId"],
+        properties: { itemId: { type: "string" } },
+        required: ["itemId"],
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "duplicate_group",
-      description: "Duplica un grupo existente dentro de un board (copia sus items). Úsalo cuando el usuario dice 'duplica este grupo', 'copia esta sección'.",
-      parameters: {
-        type: "object",
-        properties: {
-          boardId: { type: "string" },
-          groupId: { type: "string" },
-        },
-        required: ["boardId", "groupId"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "delete_column",
-      description: "Elimina una columna de un board. Úsalo cuando el usuario dice 'borra esta columna', 'elimina el campo'.",
-      parameters: {
-        type: "object",
-        properties: {
-          boardId: { type: "string" },
-          columnId: { type: "string" },
-        },
-        required: ["boardId", "columnId"],
-      },
-    },
-  },
+  // ===== FILE TOOLS — leer y guardar archivos adjuntos =====
   {
     type: "function",
     function: {
       name: "read_attached_files",
       description:
-        "Lee el contenido de los archivos que el usuario ha adjuntado al chat. Soporta imágenes (PNG/JPG/GIF/WebP) usando un modelo de visión (VLM) para analizarlas y describirlas, además de archivos de texto (txt, csv, json, md, código). Úsalo SIEMPRE que el usuario sube un archivo y pide que lo leas, analices, describas o extraigas información — incluso si es una imagen. NO digas que no puedes leer imágenes: esta tool sí puede.",
+        "Lee el contenido de los archivos que el usuario ha adjuntado al chat. Soporta imágenes (PNG/JPG/GIF/WebP) usando un modelo de visión (VLM), Excel (.xlsx/.xls) extrayendo todas las hojas como tablas, Word (.docx) extrayendo el texto del documento, PDF extrayendo el texto, CSV como texto, y archivos de texto plano (.txt/.json/.md/código). Úsalo SIEMPRE que el usuario sube un archivo y pide que lo leas, analices, describas o extraigas información — incluso si es un Excel o Word. NO digas que no puedes leer archivos: esta tool SÍ puede interpretarlos todos.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
@@ -543,37 +477,11 @@ export const SIDEKICK_TOOLS: GroqTool[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "list_groups",
-      description: "Lista los grupos de un board con sus IDs, nombres y cantidad de items. Úsalo cuando necesitas saber los grupos disponibles.",
-      parameters: {
-        type: "object",
-        properties: { boardId: { type: "string" } },
-        required: [],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_item_updates",
-      description: "Obtiene todos los updates (comentarios) de un item. Úsalo cuando el usuario pregunta por el historial de comentarios de una tarea.",
-      parameters: {
-        type: "object",
-        properties: { itemId: { type: "string" } },
-        required: ["itemId"],
-      },
-    },
-  },
 ];
 
 // ----------------------------------------------------------------------------
 // Ejecutor de tools — corre en el cliente contra el store
 // ----------------------------------------------------------------------------
-// Nota: es async porque algunas tools (read_attached_files con imágenes)
-// hacen fetch al endpoint VLM del backend.
 export async function executeTool(
   toolName: string,
   args: any,
@@ -786,189 +694,308 @@ export async function executeTool(
       return { result: { count: atRisk.length, items: atRisk } };
     }
 
-    case "duplicate_item": {
-      ctx.actions.duplicateItem(args.itemId);
-      return { result: { success: true, duplicated: args.itemId } };
+    // ===== AI BLOCK TOOLS — funciones agenticas de Monday =====
+    case "ai_summarize": {
+      // Buscar el item y sus updates
+      let targetItem: any = null;
+      let targetBoard: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; targetBoard = b; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const updates = (state.updates ?? []).filter((u: any) => u.itemId === args.itemId);
+      const textToSummarize = updates.length > 0
+        ? updates.map((u: any) => u.body).join("\n")
+        : targetItem.name;
+
+      const result = await executeAIBlock("summarize", {
+        text: textToSummarize,
+        context: `Board: ${targetBoard.name}, Item: ${targetItem.name}`,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, summary: result.output, error: result.error } };
     }
 
-    case "archive_item": {
-      ctx.actions.archiveItem(args.itemId);
-      return { result: { success: true, archived: args.itemId } };
+    case "ai_categorize": {
+      let targetItem: any = null;
+      let targetBoard: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; targetBoard = b; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const col = targetBoard.columns.find((c: any) =>
+        c.id === args.columnName || c.title.toLowerCase() === String(args.columnName).toLowerCase()
+      );
+      if (!col?.labels) return { result: { error: "Columna sin labels" } };
+
+      const options = Object.values(col.labels).map((l: any) => l.name);
+      const result = await executeAIBlock("categorize", {
+        text: targetItem.name,
+        options,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      if (result.success && result.selectedOption) {
+        // Buscar el labelId correspondiente
+        const labelEntry = Object.entries(col.labels).find(
+          ([, label]: [string, any]) => label.name === result.selectedOption
+        );
+        if (labelEntry) {
+          ctx.actions.updateColumnValue(args.itemId, col.id, { labelId: labelEntry[0] });
+        }
+      }
+
+      return { result: { success: result.success, category: result.selectedOption, error: result.error } };
     }
 
-    case "rename_group": {
-      ctx.actions.renameGroup(args.boardId, args.groupId, args.title);
-      return { result: { success: true, boardId: args.boardId, groupId: args.groupId, newTitle: args.title } };
+    case "ai_detect_sentiment": {
+      const updates = (state.updates ?? []).filter((u: any) => u.itemId === args.itemId);
+      if (updates.length === 0) return { result: { error: "Sin updates para analizar" } };
+
+      const text = updates.map((u: any) => u.body).join("\n");
+      const result = await executeAIBlock("sentiment", { text }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, sentiment: result.sentiment, raw: result.output } };
     }
 
-    case "delete_group": {
-      ctx.actions.deleteGroup(args.boardId, args.groupId);
-      return { result: { success: true, deleted: args.groupId } };
+    case "ai_suggest_actions": {
+      let targetItem: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const updates = (state.updates ?? []).filter((u: any) => u.itemId === args.itemId);
+      const text = `${targetItem.name}\n\nUpdates:\n${updates.map((u: any) => u.body).join("\n")}`;
+
+      const result = await executeAIBlock("suggest_actions", { text }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, actions: result.output } };
     }
 
-    case "add_subitem": {
-      ctx.actions.addSubitem(args.parentId, args.name);
-      return { result: { success: true, parentId: args.parentId, subitemName: args.name } };
+    case "ai_prioritize": {
+      let targetItem: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const result = await executeAIBlock("prioritize", {
+        text: targetItem.name,
+        context: `Estado: ${JSON.stringify(targetItem.columnValues)}`,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, priority: result.priorityScore } };
     }
 
-    case "add_column": {
-      ctx.actions.addColumn(args.boardId, { title: args.title, type: args.type });
-      return { result: { success: true, boardId: args.boardId, columnTitle: args.title, columnType: args.type } };
+    case "ai_translate_item": {
+      let targetItem: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const result = await executeAIBlock("translate", {
+        text: targetItem.name,
+        targetLanguage: args.targetLanguage,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, translation: result.output } };
     }
 
-    case "create_board": {
-      const wsId = args.workspaceId || state.workspaces?.[0]?.id || "w1";
-      const boardId = ctx.actions.addBoard(wsId, args.name);
-      return { result: { success: true, boardId, boardName: args.name, workspaceId: wsId }, uiAction: `navigate:${boardId}` };
+    case "ai_generate_subitems": {
+      let targetItem: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const result = await executeAIBlock("suggest_actions", {
+        text: `Descompón esta tarea en 3-5 subtareas concretas: ${targetItem.name}`,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      // Crear subitems a partir del output
+      if (result.success) {
+        const lines = result.output.split("\n").filter((l) => l.trim().match(/^\d+\./));
+        for (const line of lines.slice(0, 5)) {
+          const name = line.replace(/^\d+\.\s*/, "").trim();
+          if (name) ctx.actions.addSubitem(args.itemId, name);
+        }
+      }
+
+      return { result: { success: result.success, subitemsCreated: result.output } };
     }
 
-    case "rename_board": {
-      const board = state.boards.find((b: any) => b.id === args.boardId);
-      if (!board) return { result: { error: "Board no encontrado" } };
-      ctx.actions.renameBoard(args.boardId, args.name);
-      return { result: { success: true, boardId: args.boardId, newName: args.name } };
+    case "ai_board_insights": {
+      const board = state.boards.find((b: any) => b.id === state.activeBoardId);
+      if (!board) return { result: { error: "No hay board activo" } };
+
+      const statusCol = board.columns.find((c: any) => c.type === "status");
+      const distribution: Record<string, number> = {};
+      board.items.forEach((i: any) => {
+        const cv = i.columnValues.find((v: any) => v.columnId === statusCol?.id);
+        const label = statusCol?.labels?.[cv?.value?.labelId]?.name ?? "Sin estado";
+        distribution[label] = (distribution[label] ?? 0) + 1;
+      });
+
+      const text = `Board: ${board.name}\nTotal items: ${board.items.length}\nDistribución: ${JSON.stringify(distribution)}`;
+      const result = await executeAIBlock("summarize", {
+        text,
+        context: "Genera insights ejecutivos: tendencias, blockers, items destacados",
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, insights: result.output, distribution } };
     }
 
-    case "duplicate_board": {
-      const board = state.boards.find((b: any) => b.id === args.boardId);
-      if (!board) return { result: { error: "Board no encontrado" } };
-      const newId = ctx.actions.duplicateBoard(args.boardId);
-      return { result: { success: true, originalBoardId: args.boardId, newBoardId: newId, newName: `${board.name} (copia)` }, uiAction: `navigate:${newId}` };
+    case "ai_detect_duplicates": {
+      const board = state.boards.find((b: any) => b.id === state.activeBoardId);
+      if (!board) return { result: { error: "No hay board activo" } };
+
+      // Comparación simple por nombre similar (sin LLM para no consumir créditos)
+      const items = board.items;
+      const duplicates: any[] = [];
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const nameA = items[i].name.toLowerCase().trim();
+          const nameB = items[j].name.toLowerCase().trim();
+          const similarity = nameA.includes(nameB) || nameB.includes(nameA) ||
+            (nameA.length > 5 && nameB.length > 5 && nameA.slice(0, 10) === nameB.slice(0, 10));
+          if (similarity) {
+            duplicates.push({ itemA: items[i].id, nameA: items[i].name, itemB: items[j].id, nameB: items[j].name });
+          }
+        }
+      }
+
+      return { result: { count: duplicates.length, duplicates } };
     }
 
-    case "archive_board": {
-      ctx.actions.archiveBoard(args.boardId);
-      return { result: { success: true, archived: args.boardId } };
+    case "ai_generate_report": {
+      const board = state.boards.find((b: any) => b.id === state.activeBoardId);
+      if (!board) return { result: { error: "No hay board activo" } };
+
+      const statusCol = board.columns.find((c: any) => c.type === "status");
+      const done = board.items.filter((i: any) => {
+        const cv = i.columnValues.find((v: any) => v.columnId === statusCol?.id);
+        return cv?.value?.labelId === "1";
+      }).length;
+      const stuck = board.items.filter((i: any) => {
+        const cv = i.columnValues.find((v: any) => v.columnId === statusCol?.id);
+        return cv?.value?.labelId === "2";
+      }).length;
+
+      const text = `Board: ${board.name}\nTotal: ${board.items.length}\nDone: ${done}\nStuck: ${stuck}\nProgreso: ${Math.round((done / board.items.length) * 100)}%`;
+      const result = await executeAIBlock("generate_text", {
+        text,
+        customPrompt: `Genera un reporte ejecutivo ${args.format === "detailed" ? "detallado" : "breve"} del board. Incluye: estado general, progreso, riesgos, próximos pasos.\n\nDATOS:\n${text}`,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, report: result.output } };
     }
 
-    case "delete_board": {
-      ctx.actions.deleteBoard(args.boardId);
-      return { result: { success: true, deleted: args.boardId } };
+    case "ai_draft_email": {
+      let targetItem: any = null;
+      let targetBoard: any = null;
+      for (const b of state.boards) {
+        const found = b.items.find((i: any) => i.id === args.itemId);
+        if (found) { targetItem = found; targetBoard = b; break; }
+      }
+      if (!targetItem) return { result: { error: "Item no encontrado" } };
+
+      const result = await executeAIBlock("generate_text", {
+        text: targetItem.name,
+        customPrompt: `Redacta un email profesional.\nDestinatario: ${args.recipient ?? "equipo"}\nPropósito: ${args.purpose}\nItem: ${targetItem.name}\nBoard: ${targetBoard.name}\n\nEl email debe tener asunto, saludo, cuerpo y cierre.`,
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, email: result.output } };
     }
 
-    case "list_workspaces": {
-      return {
-        result: {
-          count: state.workspaces?.length ?? 0,
-          workspaces: (state.workspaces ?? []).map((w: any) => ({
-            id: w.id,
-            name: w.name,
-            kind: w.kind,
-            boardsCount: state.boards.filter((b: any) => b.workspaceId === w.id).length,
-            boardIds: state.boards.filter((b: any) => b.workspaceId === w.id).map((b: any) => b.id),
-          })),
-        },
-      };
+    case "ai_extract_action_items": {
+      const updates = (state.updates ?? []).filter((u: any) => u.itemId === args.itemId);
+      if (updates.length === 0) return { result: { error: "Sin updates" } };
+
+      const text = updates.map((u: any) => u.body).join("\n");
+      const result = await executeAIBlock("suggest_actions", {
+        text,
+        context: "Extrae SOLO las acciones concretas mencionadas en los updates",
+      }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, actionItems: result.output } };
     }
 
-    case "create_workspace": {
-      const wsId = ctx.actions.addWorkspace(args.name);
-      return { result: { success: true, workspaceId: wsId, workspaceName: args.name } };
+    case "ai_improve_update": {
+      const update = (state.updates ?? []).find((u: any) => u.id === args.updateId);
+      if (!update) return { result: { error: "Update no encontrado" } };
+
+      const result = await executeAIBlock("improve_text", { text: update.body }, { groqApiKey: ctx.groqApiKey ?? undefined });
+
+      return { result: { success: result.success, improved: result.output } };
     }
 
-    case "rename_workspace": {
-      const ws = state.workspaces?.find((w: any) => w.id === args.workspaceId);
-      if (!ws) return { result: { error: "Workspace no encontrado" } };
-      ctx.actions.renameWorkspace(args.workspaceId, args.name);
-      return { result: { success: true, workspaceId: args.workspaceId, newName: args.name } };
-    }
-
-    case "delete_workspace": {
-      ctx.actions.deleteWorkspace(args.workspaceId);
-      return { result: { success: true, deleted: args.workspaceId } };
-    }
-
-    case "duplicate_group": {
-      const board = state.boards.find((b: any) => b.id === args.boardId);
-      if (!board) return { result: { error: "Board no encontrado" } };
-      const group = board.groups.find((g: any) => g.id === args.groupId);
-      if (!group) return { result: { error: "Grupo no encontrado" } };
-      ctx.actions.duplicateGroup(args.boardId, args.groupId);
-      return { result: { success: true, boardId: args.boardId, sourceGroupId: args.groupId } };
-    }
-
-    case "delete_column": {
-      const board = state.boards.find((b: any) => b.id === args.boardId);
-      if (!board) return { result: { error: "Board no encontrado" } };
-      const col = board.columns.find((c: any) => c.id === args.columnId);
-      if (!col) return { result: { error: "Columna no encontrada" } };
-      ctx.actions.deleteColumn(args.boardId, args.columnId);
-      return { result: { success: true, boardId: args.boardId, deletedColumnId: args.columnId, deletedColumnTitle: col.title } };
-    }
-
+    // ===== FILE TOOLS — leer y guardar archivos adjuntos =====
     case "read_attached_files": {
       const files = ctx.attachedFiles ?? [];
       if (files.length === 0) {
         return { result: { error: "No hay archivos adjuntados al chat" } };
       }
 
-      // Procesar cada archivo: si es imagen, llamar al VLM; si es texto, devolver contenido
-      const fileResults = await Promise.all(
-        files.map(async (f) => {
-          const isImage = f.mime.startsWith("image/") ||
-            /\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name);
+      // Procesar cada archivo con el endpoint /api/agent/parse-file
+      // Importante: usar sequential en vez de Promise.all para imágenes (VLM)
+      // porque el SDK de Z.ai no maneja bien requests concurrentes de visión
+      const fileResults: any[] = [];
+      for (const f of files) {
+        try {
+          const res = await fetch("/api/agent/parse-file", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file: f.content,
+              fileName: f.name,
+              mimeType: f.mime,
+              prompt: ctx.userPrompt || "Describe y extrae toda la información clave de este archivo. Si hay texto, transcríbelo.",
+            }),
+          });
 
-          if (isImage) {
-            // El content debe ser un data URL (data:image/png;base64,...)
-            if (!f.content.startsWith("data:")) {
-              return {
-                name: f.name,
-                type: "image",
-                error: "Imagen sin datos base64 (no se puede analizar)",
-              };
-            }
-            try {
-              const vlmRes = await fetch("/api/agent/vision", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  image: f.content,
-                  prompt: ctx.userPrompt || "Describe lo que ves en esta imagen en detalle.",
-                }),
-              });
-              if (!vlmRes.ok) {
-                const errBody = await vlmRes.json().catch(() => ({}));
-                return {
-                  name: f.name,
-                  type: "image",
-                  error: `VLM error: ${errBody.error ?? vlmRes.statusText}`,
-                  retryable: errBody.retryable ?? false,
-                };
-              }
-              const data = await vlmRes.json();
-              return {
-                name: f.name,
-                type: "image",
-                mime: f.mime,
-                size: f.size,
-                analysis: data.text,
-              };
-            } catch (e: any) {
-              return {
-                name: f.name,
-                type: "image",
-                error: `No pude analizar la imagen: ${e?.message ?? "error desconocido"}`,
-              };
-            }
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            fileResults.push({
+              name: f.name,
+              type: "error",
+              error: errBody.error ?? `HTTP ${res.status}: ${res.statusText}`,
+            });
+            continue;
           }
 
-          // Archivo de texto: devolver contenido (limitado para no romper el contexto del LLM)
-          const textContent = f.content || "";
-          return {
+          const data = await res.json();
+          fileResults.push({
             name: f.name,
-            type: "text",
+            type: data.type,
             mime: f.mime,
             size: f.size,
-            content: textContent.slice(0, 8000),
-            truncated: textContent.length > 8000,
-          };
-        })
-      );
+            summary: data.summary,
+            content: data.text,
+          });
+        } catch (e: any) {
+          fileResults.push({
+            name: f.name,
+            type: "error",
+            error: `Error procesando archivo: ${e?.message ?? "desconocido"}`,
+          });
+        }
+      }
 
       return {
         result: {
           count: files.length,
           files: fileResults,
+          // Instrucciones para el LLM sobre cómo interpretar los resultados
+          instructions: "Cada archivo tiene 'type' (image/excel/word/pdf/csv/text/error), 'summary' (descripción breve), y 'content' (el contenido extraído). Si type es 'error', el archivo no se pudo procesar — informa al usuario qué archivo falló y por qué, y sugiérele intentar de nuevo. Si type es 'image', el 'content' es la descripción de la imagen generada por el VLM. Para Excel/Word/PDF/CSV/text, 'content' es el texto extraído del archivo.",
         },
       };
     }
@@ -993,58 +1020,8 @@ export async function executeTool(
       return { result: { count: files.length, files } };
     }
 
-    case "list_groups": {
-      const boardId = args.boardId || state.activeBoardId;
-      const board = state.boards.find((b: any) => b.id === boardId);
-      if (!board) return { result: { error: "Board no encontrado" } };
-      return {
-        result: {
-          boardId,
-          boardName: board.name,
-          groups: board.groups.map((g: any) => ({
-            id: g.id,
-            title: g.title,
-            color: g.color,
-            itemCount: board.items.filter((i: any) => i.groupId === g.id).length,
-          })),
-        },
-      };
-    }
-
-    case "get_item_updates": {
-      const updates = state.updates?.filter((u: any) => u.itemId === args.itemId) ?? [];
-      return {
-        result: {
-          count: updates.length,
-          updates: updates.map((u: any) => ({
-            id: u.id,
-            body: u.body,
-            authorId: u.authorId,
-            authorName: state.users?.find((usr: any) => usr.id === u.authorId)?.name ?? "Unknown",
-            createdAt: u.createdAt,
-          })),
-        },
-      };
-    }
-
-    default: {
-      const available = [
-        "list_boards","get_active_board","get_item","search_items",
-        "create_item","create_items_batch","update_column_value","update_item_name",
-        "move_item","delete_item","duplicate_item","archive_item",
-        "add_update","add_group","rename_group","delete_group","duplicate_group",
-        "summarize_board","find_at_risk_items","navigate_to_board","select_item",
-        "list_item_files","add_file","delete_file","add_subitem","delete_subitem",
-        "create_board","rename_board","duplicate_board","archive_board","delete_board",
-        "create_workspace","rename_workspace","delete_workspace","list_workspaces",
-        "add_column","delete_column"
-      ].join(", ");
-      return {
-        result: {
-          error: `La tool "${toolName}" no existe. Tools disponibles: ${available}. Por favor usa solo tools de esta lista.`
-        }
-      };
-    }
+    default:
+      return { result: { error: `Tool desconocido: ${toolName}` } };
   }
 }
 
@@ -1112,28 +1089,42 @@ export function buildSystemPrompt(context: {
 
 **Capacidades (vía tools):**
 - Listar y buscar boards/items
-- Crear items (uno o batch)
+- Crear items (uno o batch), workspaces, boards, grupos, columnas
 - Actualizar valores de columnas (status, date, people, etc.)
-- Mover items entre grupos
-- Eliminar, duplicar y archivar items
+- Mover, duplicar, archivar y eliminar items
 - Añadir comentarios/updates a items
-- Crear, renombrar y eliminar grupos
-- Duplicar grupos
 - Navegar a boards y abrir items
 - Resumir boards y encontrar items en riesgo
-- Guardar archivos adjuntos en items y listarlos
-- Listar archivos y updates de items
-- **Crear, renombrar, duplicar, archivar y eliminar boards**
-- **Crear, renombrar y eliminar workspaces**
-- Listar workspaces
-- Crear y eliminar columnas
+- Leer archivos adjuntos (incluyendo imágenes con VLM)
 
-**AI Skills (como Monday AI blocks):**
-- **Resumir**: puedes resumir updates, items o boards completos
-- **Mejorar texto**: puedes reescribir updates para hacerlos más claros y profesionales
-- **Extraer información**: puedes extraer datos clave (fechas, montos, personas) de items
-- **Traducir**: puedes traducir contenido a cualquier idioma
-- **Detectar sentimiento**: puedes analizar si los updates son positivos/negativos/neutrales
+**AI Blocks (funciones agenticas como Monday.com):**
+- **ai_summarize**: resume el contenido y updates de un item
+- **ai_categorize**: categoriza un item automáticamente en una columna status/priority
+- **ai_detect_sentiment**: analiza sentimiento de los updates (positive/negative/neutral)
+- **ai_suggest_actions**: sugiere 3 acciones concretas para un item
+- **ai_prioritize**: calcula prioridad 1-5 basándose en contenido y contexto
+- **ai_translate_item**: traduce el nombre de un item a otro idioma
+- **ai_generate_subitems**: descompone un item en subtareas con IA
+- **ai_board_insights**: genera insights ejecutivos del board activo
+- **ai_detect_duplicates**: detecta items duplicados en el board
+- **ai_generate_report**: genera un reporte ejecutivo del board
+- **ai_draft_email**: redacta un email basado en el contexto de un item
+- **ai_extract_action_items**: extrae acciones concretas mencionadas en updates
+- **ai_improve_update**: mejora el texto de un update con IA
+
+**Cuándo usar AI Blocks:**
+- Usuario: "resume este item" → ai_summarize
+- Usuario: "categoriza estos items" → ai_categorize
+- Usuario: "cómo se siente el equipo sobre esto?" → ai_detect_sentiment
+- Usuario: "qué deberíamos hacer?" → ai_suggest_actions
+- Usuario: "prioriza esto" → ai_prioritize
+- Usuario: "traduce al inglés" → ai_translate_item
+- Usuario: "descompón en subtareas" → ai_generate_subitems
+- Usuario: "dame insights del board" → ai_board_insights
+- Usuario: "hay duplicados?" → ai_detect_duplicates
+- Usuario: "genera un reporte" → ai_generate_report
+- Usuario: "redacta un email" → ai_draft_email
+- Usuario: "qué acciones se mencionan?" → ai_extract_action_items
 
 **Reglas de oro:**
 1. **Siempre usa tools para actuar.** No digas "puedes crear un item..." — créalo.
@@ -1143,16 +1134,10 @@ export function buildSystemPrompt(context: {
 5. **Si necesitas más info**, pregunta con opciones concretas, no abierto.
 6. **Para tareas complejas**, descompon: primero lista, luego confirma, luego ejecuta.
 7. Si el usuario pide algo que no puedes hacer con las tools, explica qué SÍ puedes hacer como alternativa.
-8. **Cuando el usuario adjunta archivos**, usa \`list_item_files\` para listar los archivos del item seleccionado. Puedes ver nombre, tamano y tipo MIME de los archivos. No puedes leer el contenido binario de los archivos (imagenes, PDFs, etc.) directamente. Si el usuario quiere analizar el contenido de un archivo, dile que necesita copiar el texto y pegarlo en el chat.
-9. **NUNCA digas que "no tienes permisos" o "no tienes capacidad" para hacer algo dentro del sistema.** Eres el asistente IA integrado y tienes control TOTAL sobre el workspace: puedes crear, editar y eliminar workspaces, boards, grupos, columnas e items. Si el usuario pide crear un workspace, un board, una columna o cualquier entidad del sistema — hazlo directamente llamando a la tool correspondiente (create_workspace, create_board, add_column, etc.). No le pidas permisos al usuario ni le digas que requiere configuración adicional: tú tienes los permisos.
-10. **Para crear estructuras complejas** (workspace + board + columnas + items), descomónela en pasos: primero create_workspace, luego create_board (con el workspaceId devuelto), luego add_column por cada columna necesaria, luego create_items_batch para los items iniciales. Muestra al usuario el avance en cada paso.
 
 **Ejemplos de buen comportamiento:**
 - Usuario: "crea 3 items: Comprar pan, Llamar cliente, Enviar reporte" → llamas create_items_batch
 - Usuario: "cuántos items hay en cada estado?" → llamas summarize_board
 - Usuario: "qué items están en riesgo?" → llamas find_at_risk_items
-- Usuario: "mueve el item de Stark a Closed Won" → primero search_items "Stark", confirmas, luego move_item
-- Usuario: "crea un workspace para Compras" → llamas create_workspace con name="Compras", devuelves el ID, y le dices al usuario que está listo
-- Usuario: "necesito un nuevo workspace con un board para tickets de compras y pagos" → primero create_workspace("Tickets"), luego create_board(workspaceId, "Compras y Pagos"), luego add_column por cada columna necesaria (fecha, monto, proveedor, estado, etc.)
-- Usuario: "renombra el board Actual a 'Ventas 2025'" → primero get_active_board para obtener el ID, luego rename_board`;
+- Usuario: "mueve el item de Stark a Closed Won" → primero search_items "Stark", confirmas, luego move_item`;
 }

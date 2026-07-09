@@ -18,18 +18,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Opcional: persistir logs/leanuploads entre restarts (Postgres es externo)
+      # Persistir la DB SQLite entre restarts
       - monday-ai-data:/app/data
       # Opcional: montar tu .env local para override de API keys
       - ./.env:/app/.env:ro
     environment:
       - NODE_ENV=production
-      # DATABASE_URL debe apuntar a un Postgres externo (Neon, Supabase, etc.)
-      # Ejemplo: DATABASE_URL=postgresql://user:pass@host:5432/monday_ai?schema=public
-      - DATABASE_URL=
+      - DATABASE_URL=file:/app/data/custom.db
       # === CONFIGURACIÓN DE API KEYS ===
       # El SDK Z.ai (z-ai-web-dev-sdk) ya está configurado internamente.
-      # Si tienes tu propia NVIDIA Integrate API key, ponla aquí para chat más rápido:
+      # Si tienes tu propia Groq API key, ponla aquí para chat más rápido:
       - GROQ_API_KEY=
       # Si quieres conectar tu Monday.com real:
       - MONDAY_API_KEY=

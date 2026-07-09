@@ -59,7 +59,6 @@ export interface User {
   avatarUrl?: string;
   role: "owner" | "admin" | "member" | "viewer" | "guest";
   color: string; // para avatar fallback
-  online?: boolean; // presencia en vivo
 }
 
 export interface Team {
@@ -227,18 +226,7 @@ export interface Agent {
   description: string;
   systemPrompt: string;
   tools: AgentTool[];
-  /**
-   * ID del modelo a usar. Puede ser cualquier modelo del MODEL_CATALOG
-   * de groq-client.ts. Ejemplos: "glm-4.6", "llama-3.3-70b-versatile",
-   * "deepseek-r1-distill-llama-70b", "gpt-4o", "claude-sonnet-5".
-   */
-  model: string;
-  /** Configuración de provider opcional por agente */
-  modelConfig?: {
-    provider: "nvidia";
-    /** Referencia a qué API key usar */
-    apiKeyRef?: "nvidiaApiKey";
-  };
+  model: "claude-sonnet-5" | "gpt-4o" | "glm-4.6" | "glm-4.5-air";
   temperature: number;
   maxTokens: number;
   version: number;

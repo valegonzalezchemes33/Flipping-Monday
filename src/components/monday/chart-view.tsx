@@ -160,7 +160,7 @@ export function ChartView() {
                 <RechartsTooltip />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                   {chartData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill ?? "#0072E5"} />
+                    <Cell key={i} fill={(entry as any).fill ?? "#0073EA"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -177,7 +177,7 @@ export function ChartView() {
                   labelLine={false}
                 >
                   {chartData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill ?? "#0072E5"} />
+                    <Cell key={i} fill={(entry as any).fill ?? "#0073EA"} />
                   ))}
                 </Pie>
                 <RechartsTooltip />

@@ -1,11 +1,10 @@
 // ============================================================================
 // API: /api/agent/run — Ejecuta un agente IA con streaming SSE
 // ============================================================================
-// Usa NVIDIA NIM como único provider de IA.
-// Persiste el resultado en PostgreSQL via Prisma si DATABASE_URL esta configurada.
+// El SDK z-ai-web-dev-sdk no soporta true streaming de tokens; usamos
+// non-streaming y "troceamos" la respuesta en palabras para simular UX streaming.
 import { NextRequest } from "next/server";
-import { chat } from "@/lib/groq-client";
-import { db } from "@/lib/db";
+import ZAI from "z-ai-web-dev-sdk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +18,6 @@ interface AgentRunRequest {
   maxTokens: number;
   userPrompt: string;
   itemId?: string;
-  groqApiKey?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -33,10 +31,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const {
-    systemPrompt, temperature, maxTokens, userPrompt, agentName,
-    agentId, itemId,    model = "meta/llama-3.3-70b-instruct", groqApiKey,
-  } = body;
+  const { systemPrompt, temperature, maxTokens, userPrompt, agentName } = body;
 
   if (!systemPrompt || !userPrompt) {
     return new Response(
@@ -46,58 +41,53 @@ export async function POST(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
-  const startedAt = Date.now();
-
   const stream = new ReadableStream({
     async start(controller) {
-      const abortListener = () => {
-        try { controller.close(); } catch { /* ya cerrado */ }
-      };
+      const abortListener = () => { try { controller.close(); } catch {} };
       req.signal.addEventListener("abort", abortListener);
-
       const send = (event: string, data: any) => {
         try {
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
-        } catch { /* controller cerrado */ }
+        } catch {}
       };
-
-      let fullOutput = "";
-      let tokensUsed = 0;
-      let resultModel = model;
-      let resultBackend: "nvidia" = "nvidia";
-      let execError: string | null = null;
 
       try {
         send("meta", { agentName, startedAt: new Date().toISOString() });
-        send("info", { message: "Pensando..." });
+        send("info", { message: "Inicializando modelo…" });
 
-        const result = await chat(
-          {
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-            model,
-            temperature,
-            maxTokens,
-            groqApiKey,
-          },
-          { apiKey: groqApiKey }
-        );
+        const zai = await ZAI.create();
 
-        const content = result.content ?? "";
-        resultModel = result.model;
-        resultBackend = result.backend;
+        const modelMap: Record<string, string> = {
+          "glm-4.6": "glm-4.6",
+          "glm-4.5-air": "glm-4.5-air",
+          "gpt-4o": "glm-4.6",
+          "claude-sonnet-5": "glm-4.6",
+        };
+        const sdkModel = modelMap[body.model] ?? "glm-4.6";
+
+        // Non-streaming call
+        const completion: any = await zai.chat.completions.create({
+          model: sdkModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature,
+          max_tokens: maxTokens,
+        });
+
+        const content =
+          completion?.choices?.[0]?.message?.content ??
+          completion?.choices?.[0]?.delta?.content ??
+          "";
 
         if (!content) {
-          send("error", { message: "El modelo devolvio contenido vacio" });
+          send("error", { message: "El modelo devolvió contenido vacío" });
           controller.close();
           return;
         }
-
-        fullOutput = content;
 
         // Simular streaming cortando en palabras para UX
         const tokens = content.split(/(\s+)/);
@@ -105,47 +95,28 @@ export async function POST(req: NextRequest) {
           const chunk = tokens.slice(i, i + 2).join("");
           if (chunk) {
             send("chunk", { text: chunk });
-            await new Promise((r) => setTimeout(r, 15));
+            await new Promise((r) => setTimeout(r, 18));
           }
         }
 
-        tokensUsed = Math.ceil(content.length / 4);
+        const tokensUsed =
+          completion?.usage?.total_tokens ??
+          completion?.usage?.completion_tokens ??
+          Math.ceil(content.length / 4);
 
         send("done", {
           completedAt: new Date().toISOString(),
           tokensUsed,
           fullOutput: content,
-          model: resultModel,
-          backend: resultBackend,
         });
       } catch (err: any) {
-        execError = err?.message ?? "Error desconocido";
-        send("error", { message: execError });
+        send("error", {
+          message: err?.message ?? "Error desconocido en ejecución del agente",
+        });
       } finally {
-          // Persistir en PostgreSQL (best-effort, no bloquear si falla)
-          try {
-            if (process.env.DATABASE_URL && agentId) {
-              await db.agentExecution.create({
-                data: {
-                  agentId,
-                  itemId: itemId ?? null,
-                  status: execError ? "failed" : "completed",
-                  output: fullOutput || null,
-                  error: execError,
-                  tokensUsed,
-                  durationMs: Date.now() - startedAt,
-                  model: resultModel,
-                  backend: resultBackend,
-                },
-              });
-            }
-          } catch (dbErr: any) {
-            console.warn("[agent/run] DB persist failed (non-critical):", dbErr?.message);
-          }
-
-          req.signal.removeEventListener("abort", abortListener);
-          try { controller.close(); } catch { /* ya cerrado */ }
-        }
+        req.signal.removeEventListener("abort", abortListener);
+        try { controller.close(); } catch {}
+      }
     },
   });
 

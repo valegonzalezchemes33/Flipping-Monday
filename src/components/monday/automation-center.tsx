@@ -33,11 +33,11 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerKind; label: string; desc: stri
   { value: "when_status_changes", label: "Cuando cambia estado", desc: "Dispara cuando un item cambia de status" },
   { value: "when_item_created", label: "Cuando se crea item", desc: "Dispara al crear un item nuevo" },
   { value: "when_column_changes", label: "Cuando cambia columna", desc: "Dispara al editar cualquier columna" },
-  { value: "when_date_arrives", label: "Cuando llega fecha", desc: "Dispara en la fecha de una columna date" },
   { value: "when_assignee_changes", label: "Cuando cambia asignado", desc: "Dispara al cambiar people" },
-  { value: "every_day", label: "Cada día", desc: "Cron diario a las 9am UTC" },
-  { value: "every_week", label: "Cada semana", desc: "Cron semanal lunes 9am" },
   { value: "manual", label: "Manual", desc: "Solo vía botón o API" },
+  // FIX: removidas opciones cron (every_day, every_week, when_date_arrives)
+  // porque no hay scheduler implementado — las automatizaciones se creaban
+  // activas pero jamás se disparaban.
 ];
 
 const ACTION_OPTIONS: { value: AutomationActionKind; label: string; desc: string; isAI?: boolean }[] = [

@@ -2,8 +2,7 @@
 // ============================================================================
 // BoardView — toolbar (views, filter, sort, group, hide, AI) + container de vista
 // ============================================================================
-import { useState, useMemo, useEffect } from "react";
-import dynamic from "next/dynamic";
+import { useState, useMemo } from "react";
 import {
   Filter,
   SortDesc,
@@ -31,7 +30,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import {
   Tooltip,
   TooltipContent,
@@ -68,21 +66,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { MainTableView } from "./main-table-view";
-// Skeleton loaders para vistas lazy
-import { SkeletonTable } from "@/components/ui/skeleton-table";
-import { SkeletonKanban } from "@/components/ui/skeleton-kanban";
-// Code-splitting: las vistas pesadas (Kanban, Gantt, Calendar, Chart, Timeline,
-// Workload) se cargan dinámicamente solo cuando se usan. Esto reduce el bundle
-// inicial y mejora el time-to-interactive de la página principal.
-const KanbanView = dynamic(() => import("./kanban-view").then((m) => m.KanbanView), { ssr: false, loading: () => <SkeletonKanban /> });
-const CalendarView = dynamic(() => import("./calendar-view").then((m) => m.CalendarView), { ssr: false, loading: () => <SkeletonTable /> });
-const GanttView = dynamic(() => import("./gantt-view").then((m) => m.GanttView), { ssr: false, loading: () => <SkeletonTable /> });
-const WorkloadView = dynamic(() => import("./workload-view").then((m) => m.WorkloadView), { ssr: false, loading: () => <SkeletonTable /> });
-const ChartView = dynamic(() => import("./chart-view").then((m) => m.ChartView), { ssr: false, loading: () => <SkeletonTable /> });
-const TimelineView = dynamic(() => import("./timeline-view").then((m) => m.TimelineView), { ssr: false, loading: () => <SkeletonTable /> });
-const FormView = dynamic(() => import("./form-view").then((m) => m.FormView), { ssr: false, loading: () => <SkeletonTable /> });
-const FilesView = dynamic(() => import("./files-view").then((m) => m.FilesView), { ssr: false, loading: () => <SkeletonTable /> });
-const ExportImportDialog = dynamic(() => import("./export-import-dialog").then((m) => m.ExportImportDialog), { ssr: false });
+import { KanbanView } from "./kanban-view";
+import { CalendarView } from "./calendar-view";
+import { GanttView } from "./gantt-view";
+import { WorkloadView } from "./workload-view";
+import { ChartView } from "./chart-view";
+import { TimelineView } from "./timeline-view";
+import { ExportImportDialog } from "./export-import-dialog";
 import type { ViewType, ColumnType } from "@/lib/types";
 
 const VIEW_ICONS: Record<string, React.ReactNode> = {
@@ -133,8 +123,9 @@ const COLUMN_TYPES_AVAILABLE: { type: ColumnType; label: string; icon: string }[
 ];
 
 export function BoardView() {
-  // OPTIMIZACIÓN: subscribirse SOLO al board activo, no a todo el array de boards.
-  const board = useAppStore((s) => s.boards.find((b) => b.id === s.activeBoardId));
+  const boards = useAppStore((s) => s.boards);
+  const activeBoardId = useAppStore((s) => s.activeBoardId);
+  const board = boards.find((b) => b.id === activeBoardId);
   const activeViewId = useAppStore((s) => s.activeViewId);
   const setActiveView = useAppStore((s) => s.setActiveView);
   const setShowAgentBuilder = useAppStore((s) => s.setShowAgentBuilder);
@@ -174,10 +165,6 @@ export function BoardView() {
         return <ChartView />;
       case "timeline":
         return <TimelineView />;
-      case "form":
-        return <FormView />;
-      case "files":
-        return <FilesView />;
       case "main_table":
       default:
         return <MainTableView />;
@@ -186,15 +173,15 @@ export function BoardView() {
 
   return (
     <div className="flex flex-col flex-1 h-full overflow-hidden">
-      {/* Board header — más limpio y con jerarquía clara */}
-      <div className="border-b border-border bg-card px-4 pt-3">
+      {/* Board header — estilo Monday Vibe */}
+      <div className="border-b border-[#D0D4E4] bg-white px-4 pt-3">
         <div className="flex items-center gap-3 mb-1.5">
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold text-foreground truncate leading-tight">
+            <h1 className="text-[24px] font-bold text-[#323338] truncate leading-tight" style={{ fontFamily: "var(--font-poppins), Poppins, sans-serif" }}>
               {board.name}
             </h1>
             {board.description && (
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+              <p className="text-[12px] text-[#676879] mt-0.5 truncate">
                 {board.description}
               </p>
             )}
@@ -226,24 +213,10 @@ export function BoardView() {
                       onClick={(e) => (e.target as HTMLInputElement).select()}
                     />
                     <div className="flex items-center gap-1.5 mt-2">
-                      <Button
-                        size="sm"
-                        className="h-7 text-[11px] flex-1 bg-[#0072E5] hover:bg-[#0058B5] text-white"
-                        onClick={() => {
-                          const url = `https://monday-ai.local/boards/${board.id}`;
-                          if (navigator.share) {
-                            navigator.share({ title: board.name, url }).catch(() => {});
-                          } else {
-                            navigator.clipboard?.writeText(url);
-                            toast.success("Enlace copiado", {
-                              description: "Compártelo con tu equipo",
-                            });
-                          }
-                        }}
-                      >
+                      <Button size="sm" className="h-7 text-[11px] flex-1 bg-[#0072E5] hover:bg-[#0058B5] text-white">
                         <Plus className="h-3 w-3 mr-1" />
                         Invitar
-                      </Button>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -279,14 +252,15 @@ export function BoardView() {
                   <span className="hidden sm:inline">Exportar</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Exportar tablero a JSON/Excel <kbd className="ml-1 text-[9px] bg-white/20 px-1 py-0.5 rounded">⌘E</kbd></TooltipContent>
+              <TooltipContent>Exportar tablero a JSON/Excel</TooltipContent>
             </Tooltip>
-            {/* Acción primaria: Nueva tarea */}
+            {/* Acción primaria: Nueva tarea — verde Monday #00C875 */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   size="sm"
-                  className="h-7 text-xs bg-[#0072E5] hover:bg-[#0058B5] text-white font-medium shadow-sm"
+                  className="h-8 text-[13px] bg-[#00C875] hover:bg-[#00B564] text-white font-medium shadow-sm"
+                  style={{ borderRadius: "4px" }}
                   onClick={() =>
                 addItem(board.id, board.groups[0]?.id ?? "", "Nuevo item")
               }
@@ -295,15 +269,15 @@ export function BoardView() {
               Nueva tarea
             </Button>
               </TooltipTrigger>
-              <TooltipContent>Crear una nueva tarea en este tablero <kbd className="ml-1 text-[9px] bg-white/20 px-1 py-0.5 rounded">⌘N</kbd></TooltipContent>
+              <TooltipContent>Crear una nueva tarea en este tablero</TooltipContent>
             </Tooltip>
             </TooltipProvider>
           </div>
         </div>
 
-        {/* View tabs + toolbar */}
+        {/* View tabs + toolbar — estilo Monday Vibe (underline azul) */}
         <div className="flex items-center gap-1 -mb-px mt-2">
-          {/* View switcher — anchos consistentes */}
+          {/* View switcher — underline estilo Monday */}
           <div className="flex items-stretch">
             {board.views.map((v) => {
               const isActive = activeView?.id === v.id;
@@ -312,11 +286,16 @@ export function BoardView() {
                   key={v.id}
                   onClick={() => setActiveView(v.id)}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition min-w-[80px] justify-center",
+                    "flex items-center gap-1.5 px-3 text-[13px] font-medium border-b-2 -mb-px transition-colors duration-100 min-w-[80px] justify-center",
                     isActive
-                      ? "border-[#0072E5] text-[#0072E5]"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
+                      ? "text-[#0073EA]"
+                      : "border-transparent text-[#676879] hover:text-[#323338]"
                   )}
+                  style={
+                    isActive
+                      ? { borderColor: "#0073EA", height: "40px" }
+                      : { borderColor: "transparent", height: "40px" }
+                  }
                 >
                   {VIEW_ICONS[v.type] ?? <Table2 className="h-3.5 w-3.5" />}
                   {v.name}
@@ -326,7 +305,7 @@ export function BoardView() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-muted-foreground"
+              className="h-10 px-2 text-[#676879] hover:text-[#323338] hover:bg-[rgba(103,104,121,0.1)]"
               onClick={() => setShowAddView(true)}
               title="Añadir vista"
             >
@@ -489,37 +468,13 @@ function FilterPopover({
   filters: { columnId: string; op: string; value: any }[];
   setFilters: (f: any[]) => void;
 }) {
-  const board = useAppStore((s) => s.boards.find((b) => b.id === boardId));
   const [local, setLocal] = useState(filters);
-
-  // FIX: re-sync local state cuando cambian los filters del store.
-  useEffect(() => {
-    setLocal(filters);
-  }, [filters]);
 
   const update = (i: number, patch: any) => {
     const next = [...local];
     next[i] = { ...next[i], ...patch };
     setLocal(next);
   };
-
-  // Preview count: calcular cuántos items califican con los filtros actuales
-  const previewCount = useMemo(() => {
-    if (!board || local.length === 0) return board?.items.length ?? 0;
-    return board.items.filter((it) =>
-      local.every((f) => {
-        const cv = it.columnValues.find((v) => v.columnId === f.columnId);
-        const v = cv?.value;
-        if (f.op === "empty") return !v || Object.keys(v).length === 0;
-        if (!v) return false;
-        const text = v.text ?? v.labelId ?? "";
-        if (f.op === "eq") return String(text) === String(f.value);
-        if (f.op === "neq") return String(text) !== String(f.value);
-        if (f.op === "contains") return String(text).toLowerCase().includes(String(f.value).toLowerCase());
-        return true;
-      })
-    ).length;
-  }, [board, local]);
 
   return (
     <Popover>
@@ -600,14 +555,7 @@ function FilterPopover({
             </div>
           ))}
         </div>
-
-        {/* Preview count en vivo */}
-        <div className="mt-2 text-[11px] text-muted-foreground bg-secondary/30 rounded px-2 py-1.5 flex items-center justify-between">
-          <span>Items que califican:</span>
-          <span className="font-semibold text-foreground">{previewCount}</span>
-        </div>
-
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2 mt-3">
           <Button
             variant="outline"
             size="sm"
@@ -642,10 +590,6 @@ function SortPopover({
   setSorts: (s: any[]) => void;
 }) {
   const [local, setLocal] = useState(sorts);
-  // FIX: re-sync local state cuando cambian los sorts del store
-  useEffect(() => {
-    setLocal(sorts);
-  }, [sorts]);
   return (
     <Popover>
       <PopoverTrigger asChild>

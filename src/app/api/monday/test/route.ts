@@ -1,9 +1,6 @@
 // ============================================================================
 // API: /api/monday/test — prueba la conexión con Monday.com
 // ============================================================================
-// Recibe { apiKey } y devuelve { ok, account } si la key es válida.
-// FIX: esta route faltaba — el monday-connect-dialog llamaba a /api/monday/test
-// que devolvía 404, rompiendo toda la conexión con Monday.com.
 import { NextRequest, NextResponse } from "next/server";
 import { testMondayConnection, MondayAPIError } from "@/lib/monday-client";
 
